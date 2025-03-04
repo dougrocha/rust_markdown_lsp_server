@@ -1,20 +1,17 @@
-use std::{char, ops::Range};
-
-use chumsky::{
-    prelude::end,
-    text::{self, newline, TextParser},
-    Parser,
+use std::{
+    char, fs,
+    path::{Path, PathBuf},
 };
-use log::info;
+
+use log::debug;
 use serde::{Deserialize, Serialize};
 
 use crate::{
     message::{Request, Response},
-    parser::{link_parser, wikilink_parser, InlineMarkdown},
-    LspServer, MarkdownLink,
+    LinkData, LspServer, Reference,
 };
 
-use super::TextDocumentPositionParams;
+use super::{Range, TextDocumentPositionParams};
 
 #[derive(Deserialize, Debug)]
 pub struct HoverParams {
@@ -25,44 +22,86 @@ pub struct HoverParams {
 #[derive(Serialize, Debug)]
 pub struct HoverResponse {
     contents: String,
-    range: Option<Range<usize>>,
+    range: Option<Range>,
 }
 
-fn find_link_at_position(
+fn combine_uri_and_relative_path(link_data: &LinkData) -> Option<PathBuf> {
+    let source_path = Path::new(link_data.file_name.trim_start_matches("file://"));
+    let source_dir = source_path.parent()?;
+    Some(source_dir.join(link_data.url.clone()))
+}
+
+fn find_reference_at_position<'a>(
+    lsp: &'a LspServer,
+    uri: &str,
     document: &str,
-    links: &[MarkdownLink],
     line_number: usize,
     character: usize,
-) -> Option<String> {
-    let line = document.lines().nth(line_number)?;
+) -> Option<&'a LinkData> {
+    let document_links = lsp.get_document_references(uri)?;
 
-    // TODO: Before working on this, transition all files to use ropey this is because ropey makes
-    // transition from (x,y) to byte range easy
-    info!("Parsing line: {:?}", line);
-    info!("File links: {:?}", links);
+    let line_byte_idx = str_indices::lines::to_byte_idx(document, line_number);
+    let line_str = document.lines().nth(line_number).unwrap_or("");
+    let character_byte_pos = line_str
+        .chars()
+        .take(character)
+        .map(|c| c.len_utf8())
+        .sum::<usize>();
+    let cursor_byte_pos = line_byte_idx + character_byte_pos;
 
-    None
+    document_links.iter().find_map(|reference| {
+        if let Reference::Link(data) | Reference::WikiLink(data) = reference {
+            if data.span.contains(&cursor_byte_pos) {
+                Some(data)
+            } else {
+                None
+            }
+        } else {
+            None
+        }
+    })
 }
 
 pub fn process_hover(lsp: &mut LspServer, request: Request) -> Response {
     let params: HoverParams = serde_json::from_value(request.params).unwrap();
 
-    info!("Hover Request Params: {:#?}", params);
-
     let uri = &params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
-    let lsp_doc = lsp.get_document(uri).unwrap();
-    let lsp_doc_links = lsp.get_document_links(uri).unwrap();
+    let document = lsp.get_document(uri).unwrap();
+    let link_data =
+        find_reference_at_position(lsp, uri, document, position.line, position.character);
 
-    let link = find_link_at_position(lsp_doc, lsp_doc_links, position.line, position.character);
-    info!("Link: {:#?}", link);
+    let (contents, range) = if let Some(reference) = link_data {
+        let contents = get_content(lsp, reference);
+        let range = Range::from_span(document, reference.span.clone());
 
-    let hover_response = HoverResponse {
-        contents: link.unwrap_or_default(),
-        range: None,
+        (contents, Some(range))
+    } else {
+        (String::new(), None)
     };
-    let result = serde_json::to_value(hover_response).unwrap();
 
+    let hover_response = HoverResponse { contents, range };
+
+    let result = serde_json::to_value(hover_response).unwrap();
     Response::new(request.id, Some(result))
+}
+
+fn get_content(lsp: &LspServer, link_data: &LinkData) -> String {
+    let filepath = combine_uri_and_relative_path(link_data).unwrap_or_default();
+    let file_contents = fs::read_to_string(filepath).unwrap_or_default();
+
+    if let Some(header) = &link_data.header {
+        // Maybe seperate header content and level
+        let links = lsp.get_document_references(&link_data.url);
+        debug!("Header: {:?}", header);
+        debug!("Links: {:?}", links);
+
+        // find matching header in file
+
+        // TODO: Handle reading on the header section
+        // But find some way to read the file
+    }
+
+    file_contents
 }

@@ -3,9 +3,39 @@ pub mod did_open;
 pub mod hover;
 pub mod initialize;
 
-use std::ops::Range;
+use serde::{Deserialize, Serialize};
 
-use serde::Deserialize;
+#[derive(Deserialize, Serialize, Debug)]
+pub struct Range {
+    /// The range's start position.
+    start: Position,
+    /// The range's end position.
+    end: Position,
+}
+
+impl Range {
+    fn from_span(src: &str, span: std::ops::Range<usize>) -> Self {
+        let start_line_pos = str_indices::lines::from_byte_idx(src, span.start);
+        let end_line_pos = str_indices::lines::from_byte_idx(src, span.end);
+        let start_char = span.start - str_indices::lines::to_byte_idx(src, start_line_pos);
+        let end_char = span.end - str_indices::lines::to_byte_idx(src, end_line_pos);
+
+        Range {
+            start: Position::new(start_line_pos, start_char),
+            end: Position::new(end_line_pos, end_char),
+        }
+    }
+}
+
+#[derive(Deserialize, Debug)]
+pub struct URI(String);
+
+impl URI {
+    pub fn to_path(&self) -> std::path::PathBuf {
+        let path = self.0.replace("file://", "");
+        std::path::PathBuf::from(path)
+    }
+}
 
 pub type DocumentUri = String;
 
@@ -30,10 +60,16 @@ pub struct TextDocumentIdentifier {
     uri: DocumentUri,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Deserialize, Serialize, Debug, PartialEq)]
 pub struct Position {
-    line: usize,
-    character: usize,
+    pub line: usize,
+    pub character: usize,
+}
+
+impl Position {
+    pub fn new(line: usize, character: usize) -> Self {
+        Self { line, character }
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -50,7 +86,7 @@ pub struct FullTextDocumentContentChange {
 
 #[derive(Deserialize, Debug)]
 pub struct IncrementalTextDocumentContentChange {
-    pub range: Range<usize>,
+    pub range: Range,
     #[serde(rename = "rangeLength")]
     pub range_length: Option<u32>,
     pub text: String,
