@@ -3,19 +3,21 @@ use std::{
     io::{self, Write},
 };
 
-use log::{debug, info, warn};
+use log::{debug, error, info, warn};
 use rust_markdown_lsp::{
     lsp::{
-        did_change::process_did_change, did_open::process_did_open, hover::process_hover,
-        initialize::process_initialize,
+        did_change::process_did_change,
+        did_open::process_did_open,
+        hover::process_hover,
+        initialize::{process_initialize, InitializeParams},
     },
     message::Message,
-    rpc::{encode_message, handle_message},
+    rpc::{encode_message, handle_message, write_msg},
     LspServer,
 };
 use simplelog::*;
 
-fn main() {
+fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = WriteLogger::init(
         LevelFilter::max(),
         Config::default(),
@@ -30,51 +32,92 @@ fn main() {
 
     let mut lsp = LspServer::new();
 
-    loop {
-        let message = handle_message(&mut reader);
+    let init_params = handle_initialize(&mut reader, &mut writer)?;
+    // handle init params for server
 
-        match message {
-            Message::Request(request) => {
-                let result = match request.method.as_str() {
-                    "initialize" => process_initialize(request),
-                    "textDocument/hover" => process_hover(&mut lsp, request),
+    loop {
+        match handle_message(&mut reader) {
+            Ok(message) => match message {
+                Message::Request(request) => match request.method.as_str() {
+                    "shutdown" => break,
                     _ => {
-                        warn!("Unimplemented Request: {}", request.method);
-                        continue;
+                        if let Err(e) = handle_request(&mut lsp, request, &mut writer) {
+                            error!("Error handling request: {}", e)
+                        }
                     }
-                };
-                let msg = encode_message(result);
-                writer.write_all(msg.as_bytes()).unwrap();
-                writer.flush().unwrap();
-            }
-            Message::Notification(notification) => {
-                let not = serde_json::to_string_pretty(&notification).unwrap();
-                match notification.method.as_str() {
-                    "initialized" => {
-                        info!("Initialized");
-                        continue;
-                    }
-                    "textDocument/didOpen" => {
-                        process_did_open(&mut lsp, notification);
-                        continue;
-                    }
-                    "textDocument/didSave" => {
-                        debug!("Did Save: {:#?}", not);
-                        continue;
-                    }
-                    "textDocument/didChange" => {
-                        process_did_change(&mut lsp, notification);
-                        continue;
-                    }
-                    "textDocument/didClose" => {
-                        continue;
-                    }
-                    _ => {
-                        warn!("Unimplemented Notification: {}", notification.method);
-                        continue;
-                    }
-                };
+                },
+                Message::Notification(notification) => {
+                    handle_notification(&mut lsp, notification);
+                }
+            },
+            Err(e) => {
+                error!("Error handling message: {}", e);
             }
         }
     }
+
+    Ok(())
+}
+
+fn handle_initialize<R: io::BufRead, W: Write>(
+    reader: &mut R,
+    writer: &mut W,
+) -> Result<InitializeParams, Box<dyn std::error::Error>> {
+    let message = handle_message(reader)?;
+
+    if let Message::Request(request) = message {
+        if request.method == "initialize" {
+            let (result, params) = process_initialize(request);
+            let msg = encode_message(result)?;
+            writer.write_all(msg.as_bytes())?;
+            writer.flush()?;
+            return Ok(params);
+        }
+
+        return Err("First request MUST be initialize".into());
+    };
+
+    Err("First message was not a request".into())
+}
+
+fn handle_request<W: Write>(
+    lsp: &mut LspServer,
+    request: rust_markdown_lsp::message::Request,
+    writer: &mut W,
+) -> Result<(), Box<dyn std::error::Error>> {
+    let result = match request.method.as_str() {
+        "textDocument/hover" => process_hover(lsp, request),
+        _ => {
+            warn!("Unimplemented Request: {}", request.method);
+            return Ok(());
+        }
+    };
+    let msg = encode_message(result)?;
+    write_msg(writer, &msg)?;
+    Ok(())
+}
+
+fn handle_notification(
+    lsp: &mut LspServer,
+    notification: rust_markdown_lsp::message::Notification,
+) {
+    match notification.method.as_str() {
+        "initialized" => {
+            info!("Initialized");
+        }
+        "textDocument/didOpen" => {
+            process_did_open(lsp, notification);
+        }
+        "textDocument/didSave" => {
+            let not = serde_json::to_string_pretty(&notification).unwrap();
+            debug!("Did Save: {:#?}", not);
+        }
+        "textDocument/didChange" => {
+            process_did_change(lsp, notification);
+        }
+        "textDocument/didClose" => {}
+        _ => {
+            warn!("Unimplemented Notification: {}", notification.method);
+        }
+    };
 }

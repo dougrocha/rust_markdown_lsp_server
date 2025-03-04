@@ -1,14 +1,26 @@
-use log::info;
+use log::{debug, info};
 use serde::{Deserialize, Serialize};
 
 use crate::message::{Request, Response};
 
+use super::URI;
+
 #[derive(Deserialize, Debug)]
+#[serde(rename_all(deserialize = "camelCase"))]
 pub struct InitializeParams {
-    #[serde(rename = "processId")]
     process_id: Option<usize>,
-    #[serde(rename = "clientInfo")]
     client_info: Option<ClientInfo>,
+    workspace_folders: Option<Vec<WorkspaceFolder>>,
+}
+
+#[derive(Deserialize, Debug)]
+#[serde(rename_all(deserialize = "camelCase"))]
+pub struct WorkspaceFolder {
+    /// The associated URI for this workspace folder.
+    uri: URI,
+    /// The name of the workspace folder. Used to refer to this
+    /// workspace folder in the user interface.
+    name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -33,7 +45,7 @@ pub struct ServerCapabilities {
     hover_provider: bool,
 }
 
-pub fn process_initialize(request: Request) -> Response {
+pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
     let initialize_params: InitializeParams = serde_json::from_value(request.params).unwrap();
 
     info!("{:?}", initialize_params.client_info);
@@ -50,5 +62,5 @@ pub fn process_initialize(request: Request) -> Response {
     };
     let result = serde_json::to_value(initialize_result).unwrap();
 
-    Response::new(request.id, Some(result))
+    (Response::new(request.id, Some(result)), initialize_params)
 }

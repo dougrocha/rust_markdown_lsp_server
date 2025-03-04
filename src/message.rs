@@ -8,6 +8,8 @@ pub struct Request {
 
     pub id: usize,
     pub method: String,
+    #[serde(default = "serde_json::Value::default")]
+    #[serde(skip_serializing_if = "serde_json::Value::is_null")]
     pub params: serde_json::Value,
 }
 
@@ -36,10 +38,13 @@ pub struct Notification {
     pub rpc: String,
 
     pub method: String,
+    #[serde(default = "serde_json::Value::default")]
+    #[serde(skip_serializing_if = "serde_json::Value::is_null")]
     pub params: serde_json::Value,
 }
 
-#[derive(Debug)]
+#[derive(Deserialize, Debug)]
+#[serde(untagged)]
 pub enum Message {
     Request(Request),
     Notification(Notification),

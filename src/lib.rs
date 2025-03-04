@@ -1,30 +1,42 @@
 use std::{collections::HashMap, ops::Range};
 
-use chumsky::Parser;
-use parser::{markdown_parser, InlineMarkdown, Markdown, SpannedMarkdown};
+use parser::{markdown_parser::markdown_parser, InlineMarkdown, Markdown, Parser, Spanned};
 
 pub mod lsp;
 pub mod message;
-pub mod parser;
 pub mod rpc;
 
 #[derive(Default)]
 pub struct LspServer {
-    links: HashMap<String, Vec<MarkdownLink>>,
+    // Stores link for a specific file
+    links: HashMap<String, Vec<Reference>>,
     documents: HashMap<String, String>,
 }
 
-#[derive(Debug)]
-pub struct MarkdownLink {
-    source: String,
-    span: Range<usize>,
-    to: String,
+// Find a way to distinguish between multiple types of links
+// Internal, External, to other hearders, maybe ids?
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkData {
+    pub file_name: String,
+    pub span: Range<usize>,
+    pub url: String,
+    pub title: Option<String>,
+    pub header: Option<String>,
 }
 
-impl MarkdownLink {
-    pub fn new(source: String, span: Range<usize>, to: String) -> Self {
-        Self { source, span, to }
-    }
+#[derive(Debug)]
+pub enum Reference {
+    // Header of a file
+    Header {
+        level: usize,
+        content: String,
+        span: Range<usize>,
+    },
+    // Tag ID
+    Tag(String),
+    Link(LinkData),
+    WikiLink(LinkData),
+    Footnote,
 }
 
 impl LspServer {
@@ -33,9 +45,10 @@ impl LspServer {
     }
 
     pub fn open_document(&mut self, uri: String, text: String) {
-        let markdown_tokens = markdown_parser().parse(&*text).unwrap();
+        if let Some(markdown_tokens) = markdown_parser().parse(&*text).into_output() {
+            self.extract_references(&uri, markdown_tokens);
+        }
 
-        self.extract_links_to_state(&uri, markdown_tokens);
         self.documents.insert(uri, text);
     }
 
@@ -43,8 +56,8 @@ impl LspServer {
         self.documents.insert(uri.to_string(), text.clone());
         self.links.remove(uri);
 
-        if let Ok(markdown_tokens) = markdown_parser().parse(&*text) {
-            self.extract_links_to_state(uri, markdown_tokens);
+        if let Ok(markdown_tokens) = markdown_parser().parse(&*text).into_result() {
+            self.extract_references(uri, markdown_tokens);
         }
     }
 
@@ -56,39 +69,66 @@ impl LspServer {
         self.documents.get(uri).map(|x| x.as_str())
     }
 
-    pub fn get_document_links(&self, uri: &str) -> Option<&[MarkdownLink]> {
+    pub fn get_document_references(&self, uri: &str) -> Option<&[Reference]> {
         self.links.get(uri).map(|v| v.as_slice())
     }
 
-    pub fn extract_links_to_state(
-        &mut self,
-        file_name: &str,
-        markdown_spans: Vec<SpannedMarkdown>,
-    ) {
-        for span in markdown_spans {
-            match &span.0 {
-                Markdown::Paragraph(inlines)
-                | Markdown::Header {
-                    content: inlines, ..
+    pub fn add_reference(&mut self, file_name: &str, reference: Reference) {
+        self.links
+            .entry(file_name.to_string())
+            .or_default()
+            .push(reference);
+    }
+
+    pub fn extract_references(&mut self, file_name: &str, markdown_spans: Vec<Spanned<Markdown>>) {
+        markdown_spans.into_iter().for_each(|spanned| {
+            let Spanned(markdown, span) = spanned;
+            match markdown {
+                Markdown::FootnoteDefinition { .. } => {}
+                Markdown::Header { level, content } => {
+                    let reference = Reference::Header {
+                        level,
+                        content: content.to_string(),
+                        span: span.into_range(),
+                    };
+                    self.add_reference(file_name, reference);
                 }
-                | Markdown::ReferenceDefinition {
-                    content: inlines, ..
-                } => {
+                Markdown::Paragraph(inlines) => {
                     for inline in inlines {
-                        if let InlineMarkdown::Link { url, .. } = inline {
-                            self.links.entry(file_name.to_string()).or_default().push(
-                                MarkdownLink::new(
-                                    file_name.to_string(),
-                                    span.1.clone(),
-                                    url.to_string(),
-                                ),
-                            );
+                        let Spanned(inline_markdown, inline_span) = inline;
+
+                        if let InlineMarkdown::Link { title, url, header } = inline_markdown {
+                            let link_data = LinkData {
+                                file_name: file_name.to_string(),
+                                span: inline_span.into_range(),
+                                url: url.to_string(),
+                                title: Some(title.to_string()),
+                                header: header.map(String::from),
+                            };
+                            let reference = Reference::Link(link_data);
+                            self.add_reference(file_name, reference);
+                        }
+
+                        if let InlineMarkdown::WikiLink {
+                            target,
+                            alias,
+                            header,
+                        } = inline_markdown
+                        {
+                            let link_data = LinkData {
+                                file_name: file_name.to_string(),
+                                span: inline_span.into_range(),
+                                url: target.to_string(),
+                                title: alias.map(String::from),
+                                header: header.map(String::from),
+                            };
+                            let reference = Reference::Link(link_data);
+                            self.add_reference(file_name, reference);
                         }
                     }
                 }
-                // Ignore other Markdown types
-                _ => {}
+                Markdown::Invalid => {}
             }
-        }
+        });
     }
 }
