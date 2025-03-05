@@ -1,6 +1,5 @@
 use std::{collections::HashMap, ops::Range, path::PathBuf};
 
-use log::debug;
 use lsp::URI;
 use parser::{markdown_parser::markdown_parser, InlineMarkdown, Markdown, Parser, Spanned};
 
