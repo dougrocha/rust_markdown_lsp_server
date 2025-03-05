@@ -27,13 +27,17 @@ impl Range {
     }
 }
 
-#[derive(Deserialize, Debug)]
-pub struct URI(String);
+#[derive(Deserialize, Debug, Clone)]
+pub struct URI(pub String);
 
 impl URI {
-    pub fn to_path(&self) -> std::path::PathBuf {
+    pub fn to_path_buf(&self) -> std::path::PathBuf {
         let path = self.0.replace("file://", "");
         std::path::PathBuf::from(path)
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
     }
 }
 

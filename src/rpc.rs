@@ -1,7 +1,5 @@
 use std::io::{BufRead, Write};
 
-use log::debug;
-
 use crate::message::Message;
 
 pub fn encode_message<T: serde::Serialize>(msg: T) -> Result<String, serde_json::Error> {
@@ -13,8 +11,6 @@ pub fn encode_message<T: serde::Serialize>(msg: T) -> Result<String, serde_json:
 }
 
 pub fn write_msg(out: &mut dyn Write, msg: &str) -> std::io::Result<()> {
-    debug!("Sending: {:?}", msg);
-
     write!(out, "{}", msg.len())?;
     out.write_all(msg.as_bytes())?;
     out.flush()?;

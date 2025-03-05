@@ -1,4 +1,4 @@
-use log::{debug, info};
+use log::info;
 use serde::{Deserialize, Serialize};
 
 use crate::message::{Request, Response};
@@ -8,26 +8,27 @@ use super::URI;
 #[derive(Deserialize, Debug)]
 #[serde(rename_all(deserialize = "camelCase"))]
 pub struct InitializeParams {
-    process_id: Option<usize>,
-    client_info: Option<ClientInfo>,
-    workspace_folders: Option<Vec<WorkspaceFolder>>,
+    pub process_id: Option<usize>,
+    pub client_info: Option<ClientInfo>,
+    pub workspace_folders: Option<Vec<WorkspaceFolder>>,
 }
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all(deserialize = "camelCase"))]
 pub struct WorkspaceFolder {
     /// The associated URI for this workspace folder.
-    uri: URI,
+    pub uri: URI,
     /// The name of the workspace folder. Used to refer to this
     /// workspace folder in the user interface.
-    name: String,
+    pub name: String,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct ClientInfo {
-    name: String,
-    version: Option<String>,
+    pub name: String,
+    pub version: Option<String>,
 }
+
 pub type ServerInfo = ClientInfo;
 
 #[derive(Serialize, Debug)]

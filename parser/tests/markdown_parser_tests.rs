@@ -1,6 +1,6 @@
 use chumsky::{error::Rich, span::SimpleSpan};
-use common::{compare, print_parse_errors};
-use parser::{markdown_parser::*, InlineMarkdown, Markdown, Parser};
+use common::compare;
+use parser::{markdown_parser::*, InlineMarkdown, LinkHeader, Markdown, Parser};
 
 mod common;
 
@@ -38,7 +38,10 @@ fn test_wikilink_parser_with_header() {
     let expected = InlineMarkdown::WikiLink {
         target: "target",
         alias: None,
-        header: Some("#header"),
+        header: Some(LinkHeader {
+            level: 1,
+            content: "header",
+        }),
     };
     compare(wikilink_parser(), input, expected);
 }
