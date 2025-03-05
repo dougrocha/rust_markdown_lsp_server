@@ -1,5 +1,7 @@
-use std::{collections::HashMap, ops::Range};
+use std::{collections::HashMap, ops::Range, path::PathBuf};
 
+use log::debug;
+use lsp::URI;
 use parser::{markdown_parser::markdown_parser, InlineMarkdown, Markdown, Parser, Spanned};
 
 pub mod lsp;
@@ -9,8 +11,9 @@ pub mod rpc;
 #[derive(Default)]
 pub struct LspServer {
     // Stores link for a specific file
-    links: HashMap<String, Vec<Reference>>,
+    pub links: HashMap<String, Vec<Reference>>,
     documents: HashMap<String, String>,
+    root: Option<PathBuf>,
 }
 
 // Find a way to distinguish between multiple types of links
@@ -21,7 +24,13 @@ pub struct LinkData {
     pub span: Range<usize>,
     pub url: String,
     pub title: Option<String>,
-    pub header: Option<String>,
+    pub header: Option<LinkHeader>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct LinkHeader {
+    level: usize,
+    content: String,
 }
 
 #[derive(Debug)]
@@ -44,12 +53,16 @@ impl LspServer {
         Self::default()
     }
 
-    pub fn open_document(&mut self, uri: String, text: String) {
-        if let Some(markdown_tokens) = markdown_parser().parse(&*text).into_output() {
-            self.extract_references(&uri, markdown_tokens);
+    pub fn set_root(&mut self, uri: URI) {
+        self.root = Some(uri.to_path_buf());
+    }
+
+    pub fn open_document(&mut self, uri: &str, text: &str) {
+        if let Some(markdown_tokens) = markdown_parser().parse(text).into_output() {
+            self.extract_references(uri, markdown_tokens);
         }
 
-        self.documents.insert(uri, text);
+        self.documents.insert(uri.to_string(), text.to_string());
     }
 
     pub fn update_document(&mut self, uri: &str, text: String) {
@@ -69,8 +82,8 @@ impl LspServer {
         self.documents.get(uri).map(|x| x.as_str())
     }
 
-    pub fn get_document_references(&self, uri: &str) -> Option<&[Reference]> {
-        self.links.get(uri).map(|v| v.as_slice())
+    pub fn get_document_references(&self, uri: &str) -> &[Reference] {
+        self.links.get(uri).map(|v| v.as_slice()).unwrap_or(&[])
     }
 
     pub fn add_reference(&mut self, file_name: &str, reference: Reference) {
@@ -81,6 +94,8 @@ impl LspServer {
     }
 
     pub fn extract_references(&mut self, file_name: &str, markdown_spans: Vec<Spanned<Markdown>>) {
+        let file_name = file_name.replace("file://", "");
+
         markdown_spans.into_iter().for_each(|spanned| {
             let Spanned(markdown, span) = spanned;
             match markdown {
@@ -91,7 +106,7 @@ impl LspServer {
                         content: content.to_string(),
                         span: span.into_range(),
                     };
-                    self.add_reference(file_name, reference);
+                    self.add_reference(&file_name, reference);
                 }
                 Markdown::Paragraph(inlines) => {
                     for inline in inlines {
@@ -103,10 +118,13 @@ impl LspServer {
                                 span: inline_span.into_range(),
                                 url: url.to_string(),
                                 title: Some(title.to_string()),
-                                header: header.map(String::from),
+                                header: header.map(|h| LinkHeader {
+                                    level: 1,
+                                    content: h.to_string(),
+                                }),
                             };
                             let reference = Reference::Link(link_data);
-                            self.add_reference(file_name, reference);
+                            self.add_reference(&file_name, reference);
                         }
 
                         if let InlineMarkdown::WikiLink {
@@ -120,10 +138,15 @@ impl LspServer {
                                 span: inline_span.into_range(),
                                 url: target.to_string(),
                                 title: alias.map(String::from),
-                                header: header.map(String::from),
+                                header: header.map(|parser::LinkHeader { level, content }| {
+                                    LinkHeader {
+                                        level,
+                                        content: content.to_string(),
+                                    }
+                                }),
                             };
                             let reference = Reference::Link(link_data);
-                            self.add_reference(file_name, reference);
+                            self.add_reference(&file_name, reference);
                         }
                     }
                 }

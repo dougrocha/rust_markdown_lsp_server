@@ -1,6 +1,6 @@
 use chumsky::prelude::*;
 
-use crate::{InlineMarkdown, Markdown, Spanned};
+use crate::{InlineMarkdown, LinkHeader, Markdown, Spanned};
 
 pub fn header_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, extra::Err<Rich<'a, char>>> {
     let hashes = just('#')
@@ -101,14 +101,23 @@ pub fn wikilink_parser<'a>(
         .map(|alias: &'a str| alias.trim())
         .map(|alias| (!alias.is_empty()).then_some(alias));
 
-    let header = just('#').rewind().ignore_then(
-        any()
-            .filter(|c: &char| !['|', ']', '\n'].contains(c))
-            .repeated()
-            .at_least(1)
-            .to_slice()
-            .labelled("WikiLink Header Parser"),
-    );
+    let header_level = just('#')
+        .repeated()
+        .at_least(1)
+        .at_most(6)
+        .count()
+        .labelled("hashes");
+
+    let header_content = any()
+        .filter(|c: &char| !['|', ']', '\n'].contains(c))
+        .repeated()
+        .at_least(1)
+        .to_slice()
+        .labelled("WikiLink Header Parser");
+
+    let header = header_level
+        .then(header_content)
+        .map(|(level, content)| LinkHeader { level, content });
 
     let possible_alias = choice((
         just('|').ignore_then(alias).then_ignore(just("]]")),

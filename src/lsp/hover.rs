@@ -38,7 +38,7 @@ fn find_reference_at_position<'a>(
     line_number: usize,
     character: usize,
 ) -> Option<&'a LinkData> {
-    let document_links = lsp.get_document_references(uri)?;
+    let document_links = lsp.get_document_references(uri);
 
     let line_byte_idx = str_indices::lines::to_byte_idx(document, line_number);
     let line_str = document.lines().nth(line_number).unwrap_or("");
@@ -65,7 +65,11 @@ fn find_reference_at_position<'a>(
 pub fn process_hover(lsp: &mut LspServer, request: Request) -> Response {
     let params: HoverParams = serde_json::from_value(request.params).unwrap();
 
-    let uri = &params.text_document_position_params.text_document.uri;
+    let uri = &params
+        .text_document_position_params
+        .text_document
+        .uri
+        .trim_start_matches("file://");
     let position = params.text_document_position_params.position;
 
     let document = lsp.get_document(uri).unwrap();
@@ -91,17 +95,46 @@ fn get_content(lsp: &LspServer, link_data: &LinkData) -> String {
     let filepath = combine_uri_and_relative_path(link_data).unwrap_or_default();
     let file_contents = fs::read_to_string(filepath).unwrap_or_default();
 
-    if let Some(header) = &link_data.header {
-        // Maybe seperate header content and level
-        let links = lsp.get_document_references(&link_data.url);
-        debug!("Header: {:?}", header);
-        debug!("Links: {:?}", links);
+    if link_data.header.is_none() || lsp.root.is_none() {
+        return file_contents;
+    }
+    let header = link_data.header.as_ref().unwrap();
+    let root = lsp.root.as_ref().unwrap();
 
-        // find matching header in file
+    let joined_url = root.join(&link_data.url);
+    let linked_url = joined_url.canonicalize().unwrap_or(joined_url);
 
-        // TODO: Handle reading on the header section
-        // But find some way to read the file
+    let links = lsp.get_document_references(linked_url.to_str().unwrap());
+    let mut links_iter = links.iter();
+
+    let mut start_index = None;
+    let mut end_index = None;
+
+    for link in links_iter {
+        if let Reference::Header {
+            level,
+            content,
+            span,
+        } = link
+        {
+            if start_index.is_none() && *content == header.content {
+                start_index = Some(span.start);
+                continue;
+            } else if start_index.is_some() && *level == header.level {
+                end_index = Some(span.start);
+                break;
+            }
+        }
     }
 
-    file_contents
+    // TODO: Handle reading on the header section
+    // But find some way to read the file
+
+    let extracted_content = match (start_index, end_index) {
+        (Some(start), Some(end)) => &file_contents[start..end],
+        (Some(start), None) => &file_contents[start..],
+        _ => &file_contents,
+    };
+
+    extracted_content.to_string()
 }

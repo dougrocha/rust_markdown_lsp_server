@@ -7,6 +7,12 @@ pub use chumsky::Parser;
 pub type MarkdownText<'a> = Vec<Spanned<InlineMarkdown<'a>>>;
 
 #[derive(Debug, Clone, PartialEq)]
+pub struct LinkHeader<'a> {
+    pub level: usize,
+    pub content: &'a str,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 pub enum Markdown<'a> {
     Header {
         level: usize,
@@ -36,7 +42,7 @@ pub enum InlineMarkdown<'a> {
     WikiLink {
         target: &'a str,
         alias: Option<&'a str>,
-        header: Option<&'a str>,
+        header: Option<LinkHeader<'a>>,
     },
     Footnote(&'a str),
     Tag(&'a str),

@@ -33,13 +33,17 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut lsp = LspServer::new();
 
     let init_params = handle_initialize(&mut reader, &mut writer)?;
-    // handle init params for server
+
+    load_workspaces(&mut lsp, init_params)?;
 
     loop {
         match handle_message(&mut reader) {
             Ok(message) => match message {
                 Message::Request(request) => match request.method.as_str() {
-                    "shutdown" => break,
+                    "shutdown" => {
+                        log::info!("Shutting down");
+                        break;
+                    }
                     _ => {
                         if let Err(e) = handle_request(&mut lsp, request, &mut writer) {
                             error!("Error handling request: {}", e)
@@ -53,6 +57,31 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             Err(e) => {
                 error!("Error handling message: {}", e);
             }
+        }
+    }
+
+    Ok(())
+}
+
+fn load_workspaces(
+    lsp: &mut LspServer,
+    init_params: InitializeParams,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if let Some(folders) = init_params.workspace_folders {
+        let folder = folders.first().ok_or("Workspace folder does not exist")?;
+        lsp.set_root(folder.uri.clone());
+
+        let path = folder.uri.as_str().trim_start_matches("file://");
+        let markdowns = walkdir::WalkDir::new(path)
+            .into_iter()
+            .filter_map(|e| e.ok())
+            .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
+            .map(|e| e.path().to_string_lossy().to_string())
+            .collect::<Vec<String>>();
+
+        for md_file in markdowns {
+            let text = std::fs::read_to_string(&md_file)?;
+            lsp.open_document(&md_file, &text);
         }
     }
 

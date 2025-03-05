@@ -15,7 +15,7 @@ pub fn process_did_open(lsp: &mut LspServer, notification: Notification) {
         serde_json::from_value(notification.params).unwrap();
 
     lsp.open_document(
-        did_open_params.text_document.uri,
-        did_open_params.text_document.text,
+        &did_open_params.text_document.uri,
+        &did_open_params.text_document.text,
     );
 }
