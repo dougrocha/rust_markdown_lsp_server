@@ -3,7 +3,6 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use log::debug;
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -88,7 +87,7 @@ pub fn process_hover(lsp: &mut LspServer, request: Request) -> Response {
     let hover_response = HoverResponse { contents, range };
 
     let result = serde_json::to_value(hover_response).unwrap();
-    Response::new(request.id, Some(result))
+    Response::new(request.id, result)
 }
 
 fn get_content(lsp: &LspServer, link_data: &LinkData) -> String {
@@ -105,12 +104,11 @@ fn get_content(lsp: &LspServer, link_data: &LinkData) -> String {
     let linked_url = joined_url.canonicalize().unwrap_or(joined_url);
 
     let links = lsp.get_document_references(linked_url.to_str().unwrap());
-    let mut links_iter = links.iter();
 
     let mut start_index = None;
     let mut end_index = None;
 
-    for link in links_iter {
+    for link in links {
         if let Reference::Header {
             level,
             content,
