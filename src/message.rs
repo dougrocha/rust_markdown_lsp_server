@@ -20,6 +20,7 @@ pub struct Request<P = Value> {
     pub method: String,
     /// The method's params
     #[serde(bound = "P: Serialize + DeserializeOwned")]
+    #[serde(default)]
     pub params: P,
 }
 

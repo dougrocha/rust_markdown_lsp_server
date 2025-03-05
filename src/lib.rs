@@ -64,11 +64,10 @@ impl LspServer {
         self.documents.insert(uri.to_string(), text.to_string());
     }
 
-    pub fn update_document(&mut self, uri: &str, text: String) {
-        self.documents.insert(uri.to_string(), text.clone());
-        self.links.remove(uri);
+    pub fn update_document(&mut self, uri: &str, text: &str) {
+        self.documents.insert(uri.to_string(), text.to_string());
 
-        if let Ok(markdown_tokens) = markdown_parser().parse(&*text).into_result() {
+        if let Some(markdown_tokens) = markdown_parser().parse(text).into_output() {
             self.extract_references(uri, markdown_tokens);
         }
     }
@@ -94,6 +93,9 @@ impl LspServer {
 
     pub fn extract_references(&mut self, file_name: &str, markdown_spans: Vec<Spanned<Markdown>>) {
         let file_name = file_name.replace("file://", "");
+
+        // since we parse the whole file, clear old links and just replace
+        self.links.remove(&file_name);
 
         markdown_spans.into_iter().for_each(|spanned| {
             let Spanned(markdown, span) = spanned;
