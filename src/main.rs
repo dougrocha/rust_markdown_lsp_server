@@ -130,6 +130,7 @@ fn handle_notification(
     lsp: &mut LspServer,
     notification: rust_markdown_lsp::message::Notification,
 ) {
+    debug!("textDocument/{:?}", notification.method);
     match notification.method.as_str() {
         "initialized" => {
             info!("Initialized");
@@ -138,8 +139,7 @@ fn handle_notification(
             process_did_open(lsp, notification);
         }
         "textDocument/didSave" => {
-            let not = serde_json::to_string_pretty(&notification).unwrap();
-            debug!("Did Save: {:#?}", not);
+            serde_json::to_string_pretty(&notification).unwrap();
         }
         "textDocument/didChange" => {
             process_did_change(lsp, notification);
