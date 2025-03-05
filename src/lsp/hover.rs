@@ -115,10 +115,10 @@ fn get_content(lsp: &LspServer, link_data: &LinkData) -> String {
             span,
         } = link
         {
-            if start_index.is_none() && *content == header.content {
+            if start_index.is_none() && *content == header.content && *level == header.level {
                 start_index = Some(span.start);
                 continue;
-            } else if start_index.is_some() && *level == header.level {
+            } else if start_index.is_some() && *level <= header.level {
                 end_index = Some(span.start);
                 break;
             }
