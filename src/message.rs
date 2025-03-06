@@ -10,7 +10,7 @@ pub enum Message {
     Notification(Notification),
 }
 
-#[derive(Serialize, Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct Request<P = Value> {
     #[serde(rename = "jsonrpc")]
     pub rpc: String,

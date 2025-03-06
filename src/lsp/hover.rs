@@ -1,16 +1,15 @@
-use std::{
-    char, fs,
-    path::{Path, PathBuf},
-};
+use std::{char, fs};
 
+use miette::{Context, IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    message::{Request, Response},
-    LinkData, LspServer, Reference,
+    document::references::combine_uri_and_relative_path,
+    message::{error_codes, Request, Response},
+    LinkData, LinkHeader, LspServer, Reference,
 };
 
-use super::{Range, TextDocumentPositionParams, URI};
+use super::{Position, Range, TextDocumentPositionParams, URI};
 
 #[derive(Deserialize, Debug)]
 pub struct HoverParams {
@@ -24,82 +23,73 @@ pub struct HoverResponse {
     range: Option<Range>,
 }
 
-fn combine_uri_and_relative_path(link_data: &LinkData) -> Option<PathBuf> {
-    let source_dir = Path::new(&link_data.file_name).parent()?;
-    Some(source_dir.join(&link_data.url))
-}
-
-fn find_reference_at_position<'a>(
-    lsp: &'a LspServer,
-    uri: &str,
-    document: &str,
-    line_number: usize,
-    character: usize,
-) -> Option<&'a LinkData> {
-    let document_links = lsp.get_document_references(uri);
-
-    let line_byte_idx = str_indices::lines::to_byte_idx(document, line_number);
-    let line_str = document.lines().nth(line_number).unwrap_or("");
-    let character_byte_pos = line_str
-        .chars()
-        .take(character)
-        .map(|c| c.len_utf8())
-        .sum::<usize>();
-    let cursor_byte_pos = line_byte_idx + character_byte_pos;
-
-    document_links.iter().find_map(|reference| {
-        if let Reference::Link(data) | Reference::WikiLink(data) = reference {
-            if data.span.contains(&cursor_byte_pos) {
-                Some(data)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    })
-}
-
 pub fn process_hover(lsp: &mut LspServer, request: Request) -> Response {
-    let params: HoverParams = serde_json::from_value(request.params).unwrap();
+    match process_hover_internal(lsp, &request) {
+        Ok(result) => Response::new(request.id, result),
+        Err(e) => Response::error(request.id, error_codes::INTERNAL_ERROR, e.to_string()),
+    }
+}
+
+fn process_hover_internal(lsp: &mut LspServer, request: &Request) -> Result<HoverResponse> {
+    let params: HoverParams = serde_json::from_value(request.params.clone())
+        .into_diagnostic()
+        .context("Parsing this tool's semver version failed.")?;
 
     let URI(uri) = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
-    let document = lsp.get_document(&uri).unwrap();
-    let link_data =
-        find_reference_at_position(lsp, &uri, document, position.line, position.character);
+    let document = lsp
+        .get_document(&uri)
+        .context("Document should exist somewhere")?;
+
+    let link_data = document.find_reference_at_position(Position {
+        line: position.line,
+        character: position.character,
+    });
 
     let (contents, range) = if let Some(reference) = link_data {
-        let contents = get_content(lsp, reference);
-        let range = Range::from_span(document, reference.span.clone());
+        let contents = get_content(lsp, reference)?;
+        let range = Range::from_span("", &reference.span);
 
         (contents, Some(range))
     } else {
         (String::new(), None)
     };
 
-    let hover_response = HoverResponse { contents, range };
-
-    let result = serde_json::to_value(hover_response).unwrap();
-    Response::new(request.id, result)
+    Ok(HoverResponse { contents, range })
 }
 
-fn get_content(lsp: &LspServer, link_data: &LinkData) -> String {
+fn get_content(lsp: &LspServer, link_data: &LinkData) -> Result<String> {
     let filepath = combine_uri_and_relative_path(link_data).unwrap_or_default();
     let file_contents = fs::read_to_string(filepath).unwrap_or_default();
 
     if link_data.header.is_none() || lsp.root.is_none() {
-        return file_contents;
+        return Ok(file_contents);
     }
+
     let header = link_data.header.as_ref().unwrap();
     let root = lsp.root.as_ref().unwrap();
 
     let joined_url = root.join(&link_data.url);
     let linked_url = joined_url.canonicalize().unwrap_or(joined_url);
 
-    let links = lsp.get_document_references(linked_url.to_str().unwrap());
+    let linked_doc = lsp.get_document(linked_url.to_str().unwrap()).unwrap();
+    let links = &linked_doc.references;
 
+    let (start_index, end_index) = find_header_section(header, links);
+
+    let extracted_content = match (start_index, end_index) {
+        (Some(start), Some(end)) if start < end && end <= file_contents.len() => {
+            &file_contents[start..end]
+        }
+        (Some(start), None) if start < file_contents.len() => &file_contents[start..],
+        _ => &file_contents,
+    };
+
+    Ok(extracted_content.to_string())
+}
+
+fn find_header_section(header: &LinkHeader, links: &[Reference]) -> (Option<usize>, Option<usize>) {
     let mut start_index = None;
     let mut end_index = None;
 
@@ -120,14 +110,5 @@ fn get_content(lsp: &LspServer, link_data: &LinkData) -> String {
         }
     }
 
-    // TODO: Handle reading on the header section
-    // But find some way to read the file
-
-    let extracted_content = match (start_index, end_index) {
-        (Some(start), Some(end)) => &file_contents[start..end],
-        (Some(start), None) => &file_contents[start..],
-        _ => &file_contents,
-    };
-
-    extracted_content.to_string()
+    (start_index, end_index)
 }

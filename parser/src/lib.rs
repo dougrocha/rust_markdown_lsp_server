@@ -3,6 +3,7 @@ pub mod markdown_parser;
 use chumsky::span::SimpleSpan;
 
 pub use chumsky::Parser;
+pub use markdown_parser::markdown_parser;
 
 pub type MarkdownText<'a> = Vec<Spanned<InlineMarkdown<'a>>>;
 

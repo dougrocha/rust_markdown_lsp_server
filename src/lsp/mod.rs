@@ -14,7 +14,7 @@ pub struct Range {
 }
 
 impl Range {
-    fn from_span(src: &str, span: std::ops::Range<usize>) -> Self {
+    fn from_span(src: &str, span: &std::ops::Range<usize>) -> Self {
         let start_line_pos = str_indices::lines::from_byte_idx(src, span.start);
         let end_line_pos = str_indices::lines::from_byte_idx(src, span.end);
         let start_char = span.start - str_indices::lines::to_byte_idx(src, start_line_pos);
