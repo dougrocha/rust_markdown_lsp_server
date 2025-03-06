@@ -10,7 +10,7 @@ use crate::{
     LinkData, LspServer, Reference,
 };
 
-use super::{Range, TextDocumentPositionParams};
+use super::{Range, TextDocumentPositionParams, URI};
 
 #[derive(Deserialize, Debug)]
 pub struct HoverParams {
@@ -25,9 +25,8 @@ pub struct HoverResponse {
 }
 
 fn combine_uri_and_relative_path(link_data: &LinkData) -> Option<PathBuf> {
-    let source_path = Path::new(link_data.file_name.trim_start_matches("file://"));
-    let source_dir = source_path.parent()?;
-    Some(source_dir.join(link_data.url.clone()))
+    let source_dir = Path::new(&link_data.file_name).parent()?;
+    Some(source_dir.join(&link_data.url))
 }
 
 fn find_reference_at_position<'a>(
@@ -64,16 +63,12 @@ fn find_reference_at_position<'a>(
 pub fn process_hover(lsp: &mut LspServer, request: Request) -> Response {
     let params: HoverParams = serde_json::from_value(request.params).unwrap();
 
-    let uri = &params
-        .text_document_position_params
-        .text_document
-        .uri
-        .trim_start_matches("file://");
+    let URI(uri) = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
-    let document = lsp.get_document(uri).unwrap();
+    let document = lsp.get_document(&uri).unwrap();
     let link_data =
-        find_reference_at_position(lsp, uri, document, position.line, position.character);
+        find_reference_at_position(lsp, &uri, document, position.line, position.character);
 
     let (contents, range) = if let Some(reference) = link_data {
         let contents = get_content(lsp, reference);

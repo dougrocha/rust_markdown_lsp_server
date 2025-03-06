@@ -71,7 +71,7 @@ fn load_workspaces(
         let folder = folders.first().ok_or("Workspace folder does not exist")?;
         lsp.set_root(folder.uri.clone());
 
-        let path = folder.uri.as_str().trim_start_matches("file://");
+        let path = folder.uri.as_str();
         let markdowns = walkdir::WalkDir::new(path)
             .into_iter()
             .filter_map(|e| e.ok())
