@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use crate::{message::Notification, LspServer};
 
-use super::TextDocumentItem;
+use super::{TextDocumentItem, URI};
 
 #[derive(Deserialize, Debug)]
 pub struct DidOpenTextDocumentParams {
@@ -14,9 +14,7 @@ pub fn process_did_open(lsp: &mut LspServer, notification: Notification) {
     let did_open_params: DidOpenTextDocumentParams =
         serde_json::from_value(notification.params).unwrap();
 
-    let uri = &did_open_params
-        .text_document
-        .uri
-        .trim_start_matches("file://");
-    lsp.open_document(uri, &did_open_params.text_document.text);
+    let URI(uri) = did_open_params.text_document.uri;
+
+    lsp.open_document(&uri, &did_open_params.text_document.text);
 }

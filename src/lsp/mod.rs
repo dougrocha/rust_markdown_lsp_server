@@ -3,7 +3,7 @@ pub mod did_open;
 pub mod hover;
 pub mod initialize;
 
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 
 #[derive(Deserialize, Serialize, Debug)]
 pub struct Range {
@@ -27,21 +27,38 @@ impl Range {
     }
 }
 
-#[derive(Deserialize, Debug, Clone)]
+#[derive(Debug, Clone)]
 pub struct URI(pub String);
 
-impl URI {
-    pub fn to_path_buf(&self) -> std::path::PathBuf {
-        let path = self.0.replace("file://", "");
-        std::path::PathBuf::from(path)
-    }
+impl<'de> Deserialize<'de> for URI {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let s = String::deserialize(deserializer)?;
+        let stripped = s.strip_prefix("file://");
 
-    pub fn as_str(&self) -> &str {
-        &self.0
+        let uri_string = match stripped {
+            Some(stripped_str) => stripped_str.to_string(),
+            // Keep the original string if "file://" is not present
+            None => s,
+        };
+
+        Ok(URI(uri_string))
     }
 }
 
-pub type DocumentUri = String;
+impl URI {
+    pub fn to_path_buf(&self) -> std::path::PathBuf {
+        std::path::PathBuf::from(&self.0)
+    }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
+}
+
+pub type DocumentUri = URI;
 
 #[derive(Deserialize, Debug)]
 pub struct TextDocumentItem {

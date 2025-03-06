@@ -92,10 +92,8 @@ impl LspServer {
     }
 
     pub fn extract_references(&mut self, file_name: &str, markdown_spans: Vec<Spanned<Markdown>>) {
-        let file_name = file_name.replace("file://", "");
-
         // since we parse the whole file, clear old links and just replace
-        self.links.remove(&file_name);
+        self.links.remove(file_name);
 
         markdown_spans.into_iter().for_each(|spanned| {
             let Spanned(markdown, span) = spanned;
@@ -107,7 +105,7 @@ impl LspServer {
                         content: content.to_string(),
                         span: span.into_range(),
                     };
-                    self.add_reference(&file_name, reference);
+                    self.add_reference(file_name, reference);
                 }
                 Markdown::Paragraph(inlines) => {
                     for inline in inlines {
@@ -125,7 +123,7 @@ impl LspServer {
                                 }),
                             };
                             let reference = Reference::Link(link_data);
-                            self.add_reference(&file_name, reference);
+                            self.add_reference(file_name, reference);
                         }
 
                         if let InlineMarkdown::WikiLink {
@@ -147,7 +145,7 @@ impl LspServer {
                                 }),
                             };
                             let reference = Reference::Link(link_data);
-                            self.add_reference(&file_name, reference);
+                            self.add_reference(file_name, reference);
                         }
                     }
                 }
