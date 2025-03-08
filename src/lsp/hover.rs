@@ -47,46 +47,49 @@ fn process_hover_internal(lsp: &mut LspServer, request: &Request) -> Result<Hove
 
     let (contents, range) = if let Some(reference) = link_data {
         let contents = get_content(lsp, reference)?;
-        let range = Range::from_span("", &reference.span);
+        let range = document.span_to_range(&reference.span);
 
         (contents, Some(range))
     } else {
-        (String::new(), None)
+        ("".to_string(), None)
     };
 
     Ok(HoverResponse { contents, range })
 }
 
 fn get_content(lsp: &LspServer, link_data: &LinkData) -> Result<String> {
-    let filepath = combine_uri_and_relative_path(link_data).unwrap_or_default();
-    let file_contents = fs::read_to_string(filepath).unwrap_or_default();
+    let filepath = combine_uri_and_relative_path(link_data)
+        .context("Failed to combine URI and relative path")?;
+    let document = lsp
+        .get_document(filepath.to_string_lossy())
+        .ok_or_else(|| miette::miette!("Document not found"))?;
+    let file_contents = document.content.slice(..);
 
-    if link_data.header.is_none() || lsp.root.is_none() {
-        return Ok(file_contents);
+    if link_data.header.is_none() {
+        return Ok(file_contents.to_string());
     }
 
     let header = link_data.header.as_ref().unwrap();
-    let root = lsp.root.as_ref().unwrap();
 
-    let joined_url = root.join(&link_data.url);
-    let linked_url = joined_url.canonicalize().unwrap_or(joined_url);
-
-    let linked_doc = lsp.get_document(linked_url.to_str().unwrap()).unwrap();
+    let linked_doc = lsp
+        .get_document(filepath.to_string_lossy())
+        .context("Linked document not found")?;
     let links = &linked_doc.references;
 
     let (start_index, end_index) = find_header_section(header, links);
 
     let extracted_content = match (start_index, end_index) {
-        (Some(start), Some(end)) if start < end && end <= file_contents.len() => {
-            &file_contents[start..end]
+        (Some(start), Some(end)) if start < end && end <= file_contents.len_bytes() => {
+            file_contents.slice(start..end).to_string()
         }
-        (Some(start), None) if start < file_contents.len() => &file_contents[start..],
-        _ => &file_contents,
+        (Some(start), None) if start < file_contents.len_bytes() => {
+            file_contents.slice(start..).to_string()
+        }
+        _ => file_contents.to_string(),
     };
 
-    Ok(extracted_content.to_string())
+    Ok(extracted_content)
 }
-
 fn find_header_section(header: &LinkHeader, links: &[Reference]) -> (Option<usize>, Option<usize>) {
     let mut start_index = None;
     let mut end_index = None;
