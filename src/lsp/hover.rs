@@ -1,5 +1,3 @@
-use std::{char, fs};
-
 use miette::{Context, IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
 
@@ -9,7 +7,7 @@ use crate::{
     LinkData, LinkHeader, LspServer, Reference,
 };
 
-use super::{Position, Range, TextDocumentPositionParams, URI};
+use super::{Position, Range, TextDocumentPositionParams};
 
 #[derive(Deserialize, Debug)]
 pub struct HoverParams {
@@ -33,13 +31,13 @@ pub fn process_hover(lsp: &mut LspServer, request: Request) -> Response {
 fn process_hover_internal(lsp: &mut LspServer, request: &Request) -> Result<HoverResponse> {
     let params: HoverParams = serde_json::from_value(request.params.clone())
         .into_diagnostic()
-        .context("Parsing this tool's semver version failed.")?;
+        .context("Failed to parse hover params")?;
 
-    let URI(uri) = params.text_document_position_params.text_document.uri;
+    let uri = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
     let document = lsp
-        .get_document(&uri)
+        .get_document(uri)
         .context("Document should exist somewhere")?;
 
     let link_data = document.find_reference_at_position(Position {

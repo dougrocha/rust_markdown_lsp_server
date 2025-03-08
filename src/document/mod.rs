@@ -1,21 +1,26 @@
 pub mod references;
+pub mod uri;
 
 use parser::{markdown_parser, InlineMarkdown, Markdown, Parser, Spanned};
 use references::{LinkData, LinkHeader, Reference};
 use ropey::Rope;
+use uri::URI;
 
-use crate::lsp::Position;
+use crate::lsp::{Position, Range};
 
+pub type DocumentUri = URI;
+
+#[derive(Debug)]
 pub struct Document {
-    pub file_name: String,
+    pub uri: URI,
     pub content: Rope,
     pub references: Vec<Reference>,
 }
 
 impl Document {
-    pub fn new(file_name: &str, content: &str) -> Self {
+    pub fn new(uri: URI, content: &str) -> Self {
         let mut s = Self {
-            file_name: file_name.to_string(),
+            uri,
             content: Rope::from_str(content),
             references: Vec::new(),
         };
@@ -84,7 +89,7 @@ impl Document {
 
                         if let InlineMarkdown::Link { title, url, header } = inline_markdown {
                             let link_data = LinkData {
-                                file_name: self.file_name.to_string(),
+                                source: self.uri.clone(),
                                 span: inline_span.into_range(),
                                 url: url.to_string(),
                                 title: Some(title.to_string()),
@@ -104,7 +109,7 @@ impl Document {
                         } = inline_markdown
                         {
                             let link_data = LinkData {
-                                file_name: self.file_name.to_string(),
+                                source: self.uri.clone(),
                                 span: inline_span.into_range(),
                                 url: target.to_string(),
                                 title: alias.map(String::from),
@@ -123,5 +128,21 @@ impl Document {
                 Markdown::Invalid => {}
             }
         });
+    }
+
+    pub fn span_to_range(&self, span: &std::ops::Range<usize>) -> Range {
+        let start_line = self.content.byte_to_line(span.start);
+        let end_line = self.content.byte_to_line(span.end);
+
+        let line_start_char_idx = self.content.line_to_char(start_line);
+        let line_end_char_idx = self.content.line_to_char(end_line);
+
+        let start_char = self.content.byte_to_char(span.start) - line_start_char_idx;
+        let end_char = self.content.byte_to_char(span.end) - line_end_char_idx;
+
+        Range {
+            start: Position::new(start_line, start_char),
+            end: Position::new(end_line, end_char),
+        }
     }
 }

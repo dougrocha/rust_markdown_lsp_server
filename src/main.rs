@@ -5,9 +5,11 @@ use std::{
 
 use log::{debug, error, info, warn};
 use rust_markdown_lsp::{
+    document::uri::URI,
     lsp::{
         did_change::process_did_change,
         did_open::process_did_open,
+        goto_definition::process_goto_definition,
         hover::process_hover,
         initialize::{process_initialize, InitializeParams},
     },
@@ -69,7 +71,7 @@ fn load_workspaces(
 ) -> Result<(), Box<dyn std::error::Error>> {
     if let Some(folders) = init_params.workspace_folders {
         let folder = folders.first().ok_or("Workspace folder does not exist")?;
-        lsp.set_root(folder.uri.clone());
+        lsp.set_root(&folder.uri);
 
         let path = folder.uri.as_str();
         let markdowns = walkdir::WalkDir::new(path)
@@ -81,7 +83,7 @@ fn load_workspaces(
 
         for md_file in markdowns {
             let text = std::fs::read_to_string(&md_file)?;
-            lsp.open_document(&md_file, &text);
+            lsp.open_document(URI(md_file), &text);
         }
     }
 
@@ -116,6 +118,7 @@ fn handle_request<W: Write>(
 ) -> Result<(), Box<dyn std::error::Error>> {
     let result = match request.method.as_str() {
         "textDocument/hover" => process_hover(lsp, request),
+        "textDocument/definition" => process_goto_definition(lsp, request),
         _ => {
             warn!("Unimplemented Request: {}", request.method);
             return Ok(());
@@ -130,7 +133,7 @@ fn handle_notification(
     lsp: &mut LspServer,
     notification: rust_markdown_lsp::message::Notification,
 ) {
-    debug!("textDocument/{:?}", notification.method);
+    debug!("textDocument/{}", notification.method);
     match notification.method.as_str() {
         "initialized" => {
             info!("Initialized");
