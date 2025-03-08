@@ -1,9 +1,10 @@
 use log::info;
 use serde::{Deserialize, Serialize};
 
-use crate::message::{Request, Response};
-
-use super::URI;
+use crate::{
+    document::uri::URI,
+    message::{Request, Response},
+};
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all(deserialize = "camelCase"))]
@@ -39,11 +40,11 @@ pub struct InitializeResult {
 }
 
 #[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct ServerCapabilities {
-    #[serde(rename = "textDocumentSync")]
     text_document_sync: Option<usize>,
-    #[serde(rename = "hoverProvider")]
     hover_provider: bool,
+    definition_provider: bool,
 }
 
 pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
@@ -55,6 +56,7 @@ pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
         capabilities: ServerCapabilities {
             text_document_sync: Some(1),
             hover_provider: true,
+            definition_provider: true,
         },
         server_info: Some(ServerInfo {
             name: "doug-learn-lsp".to_string(),

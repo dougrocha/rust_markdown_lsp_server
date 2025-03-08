@@ -3,6 +3,8 @@ use std::{
     path::{Path, PathBuf},
 };
 
+use super::uri::URI;
+
 #[derive(Debug)]
 pub enum Reference {
     // Header of a file
@@ -22,7 +24,7 @@ pub enum Reference {
 // Internal, External, to other hearders, maybe ids?
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkData {
-    pub file_name: String,
+    pub source: URI,
     pub span: Range<usize>,
     pub url: String,
     pub title: Option<String>,
@@ -36,6 +38,11 @@ pub struct LinkHeader {
 }
 
 pub fn combine_uri_and_relative_path(link_data: &LinkData) -> Option<PathBuf> {
-    let source_dir = Path::new(&link_data.file_name).parent()?;
-    Some(source_dir.join(&link_data.url))
+    let source_dir = Path::new(link_data.source.as_str()).parent()?;
+    Some(
+        source_dir
+            .join(&link_data.url)
+            .canonicalize()
+            .unwrap_or(source_dir.to_path_buf()),
+    )
 }

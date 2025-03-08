@@ -2,7 +2,7 @@ use serde::Deserialize;
 
 use crate::{message::Notification, LspServer};
 
-use super::{TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier, URI};
+use super::{TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
 
 #[derive(Deserialize, Debug)]
 pub struct DidChangeTextDocumentParams {
@@ -15,7 +15,7 @@ pub struct DidChangeTextDocumentParams {
 pub fn process_did_change(lsp: &mut LspServer, notification: Notification) {
     let params: DidChangeTextDocumentParams = serde_json::from_value(notification.params).unwrap();
 
-    let URI(uri) = params.text_document.text_document_identifier.uri;
+    let uri = params.text_document.text_document_identifier.uri;
 
     for change in params.content_changes {
         match change {
