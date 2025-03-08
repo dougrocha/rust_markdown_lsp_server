@@ -1,6 +1,7 @@
 # Another Markdown LSP
 
-A project primarily to learn how an LSP works — and because I like both Marksman and zk-nvim, but I can't use them at the same time.
+A project primarily to learn how an LSP works — and because I like both
+Marksman and zk-nvim, but I can't use them at the same time.
 
 ### Features
 
@@ -22,7 +23,7 @@ Currently, this server supports:
   - Shows a preview of linked documents on hover
   - [x] Wiki-links
   - [ ] Regular links
-- [ ] `textDocument/definition`
+- [x] `textDocument/definition`
 - [ ] `textDocument/references`
   - Link notes Zettelkasten-style
 - [ ] `textDocument/rename`
