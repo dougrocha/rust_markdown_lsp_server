@@ -14,7 +14,7 @@ pub enum Reference {
         span: Range<usize>,
     },
     // Tag ID
-    Tag(String),
+    Tag(URI),
     Link(LinkData),
     WikiLink(LinkData),
     Footnote,
@@ -25,8 +25,8 @@ pub enum Reference {
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkData {
     pub source: URI,
+    pub target: URI,
     pub span: Range<usize>,
-    pub url: String,
     pub title: Option<String>,
     pub header: Option<LinkHeader>,
 }
@@ -41,7 +41,7 @@ pub fn combine_uri_and_relative_path(link_data: &LinkData) -> Option<PathBuf> {
     let source_dir = Path::new(link_data.source.as_str()).parent()?;
     Some(
         source_dir
-            .join(&link_data.url)
+            .join(link_data.target.as_str())
             .canonicalize()
             .unwrap_or(source_dir.to_path_buf()),
     )

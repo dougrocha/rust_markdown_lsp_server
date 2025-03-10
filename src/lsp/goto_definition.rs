@@ -64,9 +64,6 @@ fn find_definition<'a>(
     lsp: &'a LspServer,
     link_data: &'a LinkData,
 ) -> Result<(&'a Document, &'a std::ops::Range<usize>)> {
-    log::debug!("Find Definition");
-    log::debug!("{:?}", link_data);
-
     let file_path = combine_uri_and_relative_path(link_data)
         .ok_or_else(|| miette::miette!("Invalid file path"))?;
 
