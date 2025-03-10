@@ -91,7 +91,7 @@ impl Document {
                             let link_data = LinkData {
                                 source: self.uri.clone(),
                                 span: inline_span.into_range(),
-                                url: url.to_string(),
+                                target: URI(url.to_string()),
                                 title: Some(title.to_string()),
                                 header: header.map(|h| LinkHeader {
                                     level: 1,
@@ -111,7 +111,7 @@ impl Document {
                             let link_data = LinkData {
                                 source: self.uri.clone(),
                                 span: inline_span.into_range(),
-                                url: target.to_string(),
+                                target: URI(target.to_string()),
                                 title: alias.map(String::from),
                                 header: header.map(|parser::LinkHeader { level, content }| {
                                     LinkHeader {
