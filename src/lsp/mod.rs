@@ -18,9 +18,9 @@ pub struct Range {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct TextDocumentItem {
     uri: DocumentUri,
-    #[serde(rename = "languageId")]
     language_id: String,
     version: usize,
     text: String,
@@ -51,8 +51,8 @@ impl Position {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct TextDocumentPositionParams {
-    #[serde(rename = "textDocument")]
     text_document: TextDocumentIdentifier,
     position: Position,
 }
@@ -63,9 +63,9 @@ pub struct FullTextDocumentContentChange {
 }
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct IncrementalTextDocumentContentChange {
     pub range: Range,
-    #[serde(rename = "rangeLength")]
     pub range_length: Option<u32>,
     pub text: String,
 }
