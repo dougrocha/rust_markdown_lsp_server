@@ -1,8 +1,8 @@
 use serde::Deserialize;
 
-use crate::{message::Notification, LspServer};
+use crate::message::Notification;
 
-use super::TextDocumentItem;
+use super::{server::LspServer, TextDocumentItem};
 
 #[derive(Deserialize, Debug)]
 pub struct DidOpenTextDocumentParams {

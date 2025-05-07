@@ -1,8 +1,8 @@
 use serde::Deserialize;
 
-use crate::{message::Notification, LspServer};
+use crate::message::Notification;
 
-use super::{TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
+use super::{server::LspServer, TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
 
 #[derive(Deserialize, Debug)]
 pub struct DidChangeTextDocumentParams {
