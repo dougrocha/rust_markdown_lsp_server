@@ -1,3 +1,4 @@
+pub mod code_action;
 pub mod did_change;
 pub mod did_open;
 pub mod goto_definition;
@@ -75,4 +76,22 @@ pub struct IncrementalTextDocumentContentChange {
 pub enum TextDocumentContentChangeEvent {
     Full(FullTextDocumentContentChange),
     Incremental(IncrementalTextDocumentContentChange),
+}
+
+#[derive(Deserialize, Debug)]
+pub struct Diagnostic {
+    /// The range at which the message applies.
+    range: Range,
+    /// The diagnostic's message.
+    message: String,
+}
+
+#[derive(Serialize, Debug)]
+pub struct Command {
+    /// Title of the command, like `save`.
+    title: String,
+    /// The identifier of the actual command handler.
+    command: String,
+    /// Arguments that the command handler should be invoked with.
+    arguments: Option<Vec<serde_json::Value>>,
 }
