@@ -5,8 +5,8 @@ use crate::{
         uri::URI,
         Document,
     },
+    lsp::server::LspServer,
     message::{error_codes, Request, Response},
-    LspServer,
 };
 use miette::{IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};

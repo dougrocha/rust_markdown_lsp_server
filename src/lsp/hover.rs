@@ -3,8 +3,9 @@ use serde::{Deserialize, Serialize};
 
 use crate::{
     document::references::combine_uri_and_relative_path,
+    lsp::server::LspServer,
     message::{error_codes, Request, Response},
-    LinkData, LinkHeader, LspServer, Reference,
+    LinkData, LinkHeader, Reference,
 };
 
 use super::{Position, Range, TextDocumentPositionParams};

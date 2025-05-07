@@ -12,10 +12,10 @@ use rust_markdown_lsp::{
         goto_definition::process_goto_definition,
         hover::process_hover,
         initialize::{process_initialize, InitializeParams},
+        server::LspServer,
     },
     message::Message,
     rpc::{encode_message, handle_message, write_msg},
-    LspServer,
 };
 use simplelog::*;
 
