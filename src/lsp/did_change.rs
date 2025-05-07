@@ -5,10 +5,9 @@ use crate::message::Notification;
 use super::{server::LspServer, TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct DidChangeTextDocumentParams {
-    #[serde(rename = "textDocument")]
     text_document: VersionedTextDocumentIdentifier,
-    #[serde(rename = "contentChanges")]
     content_changes: Vec<TextDocumentContentChangeEvent>,
 }
 

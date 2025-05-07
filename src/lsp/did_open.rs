@@ -5,8 +5,8 @@ use crate::message::Notification;
 use super::{server::LspServer, TextDocumentItem};
 
 #[derive(Deserialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct DidOpenTextDocumentParams {
-    #[serde(rename = "textDocument")]
     text_document: TextDocumentItem,
 }
 

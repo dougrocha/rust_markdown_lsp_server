@@ -7,7 +7,7 @@ use crate::{
 };
 
 #[derive(Deserialize, Debug)]
-#[serde(rename_all(deserialize = "camelCase"))]
+#[serde(rename_all = "camelCase")]
 pub struct InitializeParams {
     pub process_id: Option<usize>,
     pub client_info: Option<ClientInfo>,
@@ -15,7 +15,7 @@ pub struct InitializeParams {
 }
 
 #[derive(Deserialize, Debug)]
-#[serde(rename_all(deserialize = "camelCase"))]
+#[serde(rename_all = "camelCase")]
 pub struct WorkspaceFolder {
     /// The associated URI for this workspace folder.
     pub uri: URI,
@@ -33,9 +33,9 @@ pub struct ClientInfo {
 pub type ServerInfo = ClientInfo;
 
 #[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
 pub struct InitializeResult {
     capabilities: ServerCapabilities,
-    #[serde(rename = "serverInfo")]
     server_info: Option<ServerInfo>,
 }
 
@@ -45,6 +45,7 @@ pub struct ServerCapabilities {
     text_document_sync: Option<usize>,
     hover_provider: bool,
     definition_provider: bool,
+    code_action_provider: bool,
 }
 
 pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
@@ -57,6 +58,7 @@ pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
             text_document_sync: Some(1),
             hover_provider: true,
             definition_provider: true,
+            code_action_provider: true,
         },
         server_info: Some(ServerInfo {
             name: "doug-learn-lsp".to_string(),
