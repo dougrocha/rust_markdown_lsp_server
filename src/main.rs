@@ -100,8 +100,7 @@ fn handle_initialize<R: io::BufRead, W: Write>(
         if request.method == "initialize" {
             let (result, params) = process_initialize(request);
             let msg = encode_message(&result)?;
-            writer.write_all(msg.as_bytes())?;
-            writer.flush()?;
+            write_msg(writer, &msg)?;
             return Ok(params);
         }
 
