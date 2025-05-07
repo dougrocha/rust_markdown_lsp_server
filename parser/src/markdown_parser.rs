@@ -164,18 +164,26 @@ pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra::
         .map(|title: &str| title.trim())
         .labelled("Link Title Parser");
 
-    let header = just('#').ignore_then(
-        any()
-            .filter(|c: &char| *c != ']' && *c != '\n')
-            .repeated()
-            .at_least(1)
-            .to_slice()
-            .map(|title: &str| title.trim())
-            .labelled("Link Header Parser"),
-    );
+    let header_level = just('#')
+        .repeated()
+        .at_least(1)
+        .at_most(6)
+        .count()
+        .labelled("hashes");
+
+    let header_content = any()
+        .filter(|c: &char| ![')', '\n'].contains(c))
+        .repeated()
+        .at_least(1)
+        .to_slice()
+        .labelled("WikiLink Header Parser");
+
+    let header = header_level
+        .then(header_content)
+        .map(|(level, content)| LinkHeader { level, content });
 
     let uri = any()
-        .filter(|c: &char| *c != '#' && *c != ')' && *c != '\n')
+        .filter(|c: &char| !['#', ')', '\n'].contains(c))
         .repeated()
         .to_slice()
         .map(|uri: &str| uri.trim())

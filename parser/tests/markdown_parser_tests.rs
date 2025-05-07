@@ -78,6 +78,31 @@ fn test_wikilink_parser_whitespace() {
 }
 
 #[test]
+fn test_link_parser_basic() {
+    let input = "[Link Text](http://example.com)";
+    let expected = InlineMarkdown::Link {
+        title: "Link Text",
+        uri: "http://example.com",
+        header: None,
+    };
+    compare(link_parser(), input, expected);
+}
+
+#[test]
+fn test_link_parser_with_header() {
+    let input = "[Link Text](./other_file#Heading)";
+    let expected = InlineMarkdown::Link {
+        title: "Link Text",
+        uri: "./other_file",
+        header: Some(LinkHeader {
+            level: 1,
+            content: "Heading",
+        }),
+    };
+    compare(link_parser(), input, expected);
+}
+
+#[test]
 fn test_image_parser_basic() {
     let input = "![Alt Text](image.png)";
     let expected = InlineMarkdown::Image {

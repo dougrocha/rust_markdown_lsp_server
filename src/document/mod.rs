@@ -87,41 +87,32 @@ impl Document {
                     for inline in inlines {
                         let Spanned(inline_markdown, inline_span) = inline;
 
-                        if let InlineMarkdown::Link { title, url, header } = inline_markdown {
-                            let link_data = LinkData {
-                                source: self.uri.clone(),
-                                span: inline_span.into_range(),
-                                target: URI(url.to_string()),
-                                title: Some(title.to_string()),
-                                header: header.map(|h| LinkHeader {
-                                    level: 1,
-                                    content: h.to_string(),
-                                }),
-                            };
-                            let reference = Reference::Link(link_data);
-                            self.references.push(reference);
-                        }
-
-                        if let InlineMarkdown::WikiLink {
-                            target,
-                            alias,
-                            header,
-                        } = inline_markdown
-                        {
-                            let link_data = LinkData {
-                                source: self.uri.clone(),
-                                span: inline_span.into_range(),
-                                target: URI(target.to_string()),
-                                title: alias.map(String::from),
-                                header: header.map(|parser::LinkHeader { level, content }| {
-                                    LinkHeader {
-                                        level,
-                                        content: content.to_string(),
-                                    }
-                                }),
-                            };
-                            let reference = Reference::Link(link_data);
-                            self.references.push(reference);
+                        match inline_markdown {
+                            InlineMarkdown::Link { title, uri, header } => {
+                                let reference = create_link_reference(
+                                    &self.uri,
+                                    inline_span.into_range(),
+                                    uri,
+                                    Some(title),
+                                    header,
+                                );
+                                self.references.push(reference);
+                            }
+                            InlineMarkdown::WikiLink {
+                                target,
+                                alias,
+                                header,
+                            } => {
+                                let reference = create_link_reference(
+                                    &self.uri,
+                                    inline_span.into_range(),
+                                    target,
+                                    alias,
+                                    header,
+                                );
+                                self.references.push(reference);
+                            }
+                            _ => {}
                         }
                     }
                 }
@@ -145,4 +136,25 @@ impl Document {
             end: Position::new(end_line, end_char),
         }
     }
+}
+
+// Helper function to create a link reference
+fn create_link_reference(
+    source: &URI,
+    inline_span: std::ops::Range<usize>,
+    target: &str,
+    title: Option<&str>,
+    header: Option<parser::LinkHeader>,
+) -> Reference {
+    let link_data = LinkData {
+        source: source.clone(),
+        span: inline_span,
+        target: URI(target.to_string()),
+        title: title.map(|t| t.to_string()),
+        header: header.map(|parser::LinkHeader { level, content }| LinkHeader {
+            level,
+            content: content.to_string(),
+        }),
+    };
+    Reference::Link(link_data)
 }
