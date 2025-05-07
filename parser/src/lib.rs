@@ -32,9 +32,8 @@ pub enum InlineMarkdown<'a> {
     PlainText(&'a str),
     Link {
         title: &'a str,
-        // Used for links to other markdown files with a specific header
-        header: Option<&'a str>,
         uri: &'a str,
+        header: Option<LinkHeader<'a>>,
     },
     Image {
         alt_text: &'a str,
