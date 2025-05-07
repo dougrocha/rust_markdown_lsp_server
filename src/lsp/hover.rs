@@ -58,6 +58,7 @@ fn process_hover_internal(lsp: &mut LspServer, request: &Request) -> Result<Hove
     Ok(HoverResponse { contents, range })
 }
 
+/// Retrieves the content from a linked document based on the provided link data.
 fn get_content(lsp: &LspServer, link_data: &LinkData) -> Result<String> {
     let filepath = combine_uri_and_relative_path(link_data)
         .context("Failed to combine URI and relative path")?;
@@ -77,21 +78,26 @@ fn get_content(lsp: &LspServer, link_data: &LinkData) -> Result<String> {
         .context("Linked document not found")?;
     let links = &linked_doc.references;
 
-    let (start_index, end_index) = find_header_section(header, links);
+    let (start_index, end_index) = extract_header_section(header, links);
 
     let extracted_content = match (start_index, end_index) {
         (Some(start), Some(end)) if start < end && end <= file_contents.len_bytes() => {
-            file_contents.slice(start..end).to_string()
+            file_contents.byte_slice(start..end).to_string()
         }
         (Some(start), None) if start < file_contents.len_bytes() => {
-            file_contents.slice(start..).to_string()
+            file_contents.byte_slice(start..).to_string()
         }
         _ => file_contents.to_string(),
     };
 
     Ok(extracted_content)
 }
-fn find_header_section(header: &LinkHeader, links: &[Reference]) -> (Option<usize>, Option<usize>) {
+
+/// Extracts the start and end indices of a header section from the provided links.
+fn extract_header_section(
+    header: &LinkHeader,
+    links: &[Reference],
+) -> (Option<usize>, Option<usize>) {
     let mut start_index = None;
     let mut end_index = None;
 
