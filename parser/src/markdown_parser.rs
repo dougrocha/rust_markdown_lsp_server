@@ -191,7 +191,7 @@ pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra::
         .then(uri)
         .map_err(|e: Rich<char>| Rich::custom(*e.span(), "2. Link format is invalid."))
         .then_ignore(just(')'))
-        .map(|(title, (url, header))| InlineMarkdown::Link { title, url, header })
+        .map(|(title, (uri, header))| InlineMarkdown::Link { title, uri, header })
         .labelled("Link Parser")
 }
 
