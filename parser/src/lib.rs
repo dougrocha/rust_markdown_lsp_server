@@ -1,11 +1,20 @@
-pub mod markdown_parser;
+use chumsky::prelude::*;
 
-use chumsky::span::SimpleSpan;
+use markdown::{footnote_definition_parser, header_parser, paragraph_parser};
+use yaml::{frontmatter_parser, Frontmatter};
 
 pub use chumsky::Parser;
-pub use markdown_parser::markdown_parser;
+
+pub mod markdown;
+pub mod yaml;
 
 pub type MarkdownText<'a> = Vec<Spanned<InlineMarkdown<'a>>>;
+
+#[derive(Debug, Clone)]
+pub struct ParsedMarkdown<'a> {
+    pub frontmatter: Option<Frontmatter<'a>>,
+    pub body: Vec<Spanned<Markdown<'a>>>,
+}
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkHeader<'a> {
@@ -51,3 +60,27 @@ pub enum InlineMarkdown<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Spanned<T>(pub T, pub SimpleSpan);
+
+pub fn markdown_parser<'a>(
+) -> impl Parser<'a, &'a str, ParsedMarkdown<'a>, extra::Err<Rich<'a, char>>> {
+    frontmatter_parser()
+        .or_not()
+        .then(
+            choice((
+                header_parser(),
+                footnote_definition_parser(),
+                paragraph_parser(),
+            ))
+            .recover_with(skip_until(
+                any().ignored(),
+                text::newline().ignored(),
+                || Markdown::Invalid,
+            ))
+            .map_with(|block, e| Spanned(block, e.span()))
+            .then_ignore(choice((text::whitespace(), text::newline())))
+            .repeated()
+            .collect(),
+        )
+        .then_ignore(end().or_not())
+        .map(|(frontmatter, body)| ParsedMarkdown { frontmatter, body })
+}

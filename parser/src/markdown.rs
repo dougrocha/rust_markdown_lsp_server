@@ -272,22 +272,3 @@ pub fn paragraph_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, extra::E
         .collect()
         .map(Markdown::Paragraph)
 }
-
-pub fn markdown_parser<'a>(
-) -> impl Parser<'a, &'a str, Vec<Spanned<Markdown<'a>>>, extra::Err<Rich<'a, char>>> {
-    choice((
-        header_parser(),
-        footnote_definition_parser(),
-        paragraph_parser(),
-    ))
-    .recover_with(skip_until(
-        any().ignored(),
-        text::newline().ignored(),
-        || Markdown::Invalid,
-    ))
-    .map_with(|block, e| Spanned(block, e.span()))
-    .then_ignore(choice((text::whitespace(), text::newline())))
-    .repeated()
-    .collect()
-    .then_ignore(end().or_not())
-}

@@ -1,5 +1,5 @@
 use chumsky::Parser;
-use parser::markdown_parser::markdown_parser;
+use parser::markdown_parser;
 use std::fs;
 
 fn main() {

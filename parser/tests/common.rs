@@ -1,8 +1,6 @@
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::prelude::*;
 
-use parser::Parser;
-
 pub fn print_parse_errors(src: &str, errs: Vec<Rich<char>>) {
     errs.into_iter().for_each(|e| {
         Report::build(ReportKind::Error, ("Testing File", e.span().into_range()))
