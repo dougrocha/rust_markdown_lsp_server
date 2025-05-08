@@ -62,16 +62,16 @@ impl Document {
 
     fn parse_content(&mut self) {
         let input = self.content.slice(..).to_string();
-        let markdown_spans =
-            if let Some(markdown_tokens) = markdown_parser().parse(&input).into_output() {
-                markdown_tokens
+        let (_frontmatter, body) =
+            if let Some(parsed_markdown) = markdown_parser().parse(&input).into_output() {
+                (parsed_markdown.frontmatter, parsed_markdown.body)
             } else {
                 return;
             };
 
         self.references.clear();
 
-        markdown_spans.into_iter().for_each(|spanned| {
+        body.into_iter().for_each(|spanned| {
             let Spanned(markdown, span) = spanned;
             match markdown {
                 Markdown::FootnoteDefinition { .. } => {}
