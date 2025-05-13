@@ -34,7 +34,7 @@ impl Document {
         self.parse_content();
     }
 
-    pub fn find_reference_at_position(&self, position: Position) -> Option<&LinkData> {
+    pub fn find_reference_at_position(&self, position: Position) -> Option<&Reference> {
         let Position { line, character } = position;
         let text = self.content.slice(..);
 
@@ -48,16 +48,13 @@ impl Document {
         let line_byte_idx = text.line_to_byte(line);
         let cursor_byte_pos = line_byte_idx + character_byte_pos;
 
-        self.references
-            .iter()
-            .find_map(|reference| match reference {
-                Reference::Link(data) | Reference::WikiLink(data)
-                    if data.span.contains(&cursor_byte_pos) =>
-                {
-                    Some(data)
-                }
-                _ => None,
-            })
+        self.references.iter().find(|reference| match reference {
+            Reference::Link(data) | Reference::WikiLink(data) => {
+                data.span.contains(&cursor_byte_pos)
+            }
+            Reference::Header { span, .. } => span.contains(&cursor_byte_pos),
+            _ => false,
+        })
     }
 
     fn parse_content(&mut self) {

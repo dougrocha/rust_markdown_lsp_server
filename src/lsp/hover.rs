@@ -41,19 +41,16 @@ fn process_hover_internal(lsp: &mut LspServer, request: &Request) -> Result<Hove
         .get_document(uri)
         .context("Document should exist somewhere")?;
 
-    let link_data = document.find_reference_at_position(Position {
-        line: position.line,
-        character: position.character,
-    });
+    let reference = document.find_reference_at_position(position);
 
-    let (contents, range) = if let Some(reference) = link_data {
-        let contents = get_content(lsp, reference)?;
-        let range = document.span_to_range(&reference.span);
-
-        (contents, Some(range))
-    } else {
-        ("".to_string(), None)
-    };
+    let (contents, range) =
+        if let Some(Reference::Link(link) | Reference::WikiLink(link)) = reference {
+            let contents = get_content(lsp, link)?;
+            let range = document.span_to_range(&link.span);
+            (contents, Some(range))
+        } else {
+            ("".to_string(), None)
+        };
 
     Ok(HoverResponse { contents, range })
 }
