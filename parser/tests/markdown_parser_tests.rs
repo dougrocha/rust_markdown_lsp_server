@@ -1,6 +1,6 @@
 use chumsky::{error::Rich, span::SimpleSpan};
 use common::compare;
-use parser::{markdown_parser::*, InlineMarkdown, LinkHeader, Markdown, Parser};
+use parser::{markdown::*, InlineMarkdown, LinkHeader, Markdown, Parser};
 
 mod common;
 
@@ -71,7 +71,7 @@ fn test_wikilink_parser_whitespace() {
     assert_eq!(
         errors.first(),
         Some(&Rich::custom(
-            SimpleSpan::new(11, 18),
+            SimpleSpan::from(11..18),
             "WikiLink alias contains spaces before or after."
         ))
     );
