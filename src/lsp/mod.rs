@@ -5,6 +5,7 @@ pub mod goto_definition;
 pub mod hover;
 pub mod initialize;
 pub mod server;
+pub mod workspace;
 
 use serde::{Deserialize, Serialize};
 
