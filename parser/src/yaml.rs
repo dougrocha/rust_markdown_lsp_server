@@ -43,8 +43,5 @@ pub fn frontmatter_parser<'a>(
         .ignore_then(line.repeated().collect::<Vec<_>>())
         .then_ignore(just("---"))
         .then_ignore(text::newline().or_not())
-        .map(|entries| {
-            println!("{:?}", entries);
-            Frontmatter(entries)
-        })
+        .map(Frontmatter)
 }
