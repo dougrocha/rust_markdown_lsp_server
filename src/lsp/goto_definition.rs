@@ -42,13 +42,11 @@ fn process_goto_definition_internal(
     let document = lsp
         .get_document(&uri)
         .ok_or_else(|| miette::miette!("Document not found"))?;
-    let link_data = document.find_reference_at_position(Position {
-        line: position.line,
-        character: position.character,
-    });
 
-    if let Some(reference) = link_data {
-        let (document, span) = find_definition(lsp, reference)?;
+    let reference = document.find_reference_at_position(position);
+
+    if let Some(Reference::Link(link) | Reference::WikiLink(link)) = &reference {
+        let (document, span) = find_definition(lsp, link)?;
         let range = document.span_to_range(span);
 
         Ok(GotoDefinitionResponse {
