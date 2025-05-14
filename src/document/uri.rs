@@ -2,8 +2,18 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Deserializer, Serialize};
 
-#[derive(Serialize, Debug, Clone, Eq, PartialEq)]
+#[derive(Debug, Clone, Eq, PartialEq, Hash)]
 pub struct URI(pub String);
+
+impl Serialize for URI {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let prefixed_uri = format!("file://{}", self.0);
+        serializer.serialize_str(&prefixed_uri)
+    }
+}
 
 impl From<PathBuf> for URI {
     fn from(path: std::path::PathBuf) -> Self {
