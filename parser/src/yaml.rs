@@ -1,5 +1,7 @@
 use chumsky::prelude::*;
 
+use crate::ParseError;
+
 #[derive(Debug, Clone)]
 pub enum Yaml<'a> {
     String(&'a str),
@@ -9,8 +11,7 @@ pub enum Yaml<'a> {
 #[derive(Debug, Clone)]
 pub struct Frontmatter<'a>(Vec<(&'a str, Yaml<'a>)>);
 
-pub fn frontmatter_parser<'a>(
-) -> impl Parser<'a, &'a str, Frontmatter<'a>, extra::Err<Rich<'a, char>>> {
+pub fn frontmatter_parser<'a>() -> impl Parser<'a, &'a str, Frontmatter<'a>, ParseError<'a>> {
     let key = text::ident().labelled("Key");
 
     let single_value = any()

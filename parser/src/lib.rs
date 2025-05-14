@@ -8,6 +8,8 @@ pub use chumsky::Parser;
 pub mod markdown;
 pub mod yaml;
 
+pub type ParseError<'a> = extra::Err<Rich<'a, char>>;
+
 pub type MarkdownText<'a> = Vec<Spanned<InlineMarkdown<'a>>>;
 
 #[derive(Debug, Clone)]
@@ -61,8 +63,7 @@ pub enum InlineMarkdown<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub struct Spanned<T>(pub T, pub SimpleSpan);
 
-pub fn markdown_parser<'a>(
-) -> impl Parser<'a, &'a str, ParsedMarkdown<'a>, extra::Err<Rich<'a, char>>> {
+pub fn markdown_parser<'a>() -> impl Parser<'a, &'a str, ParsedMarkdown<'a>, ParseError<'a>> {
     frontmatter_parser()
         .or_not()
         .then(
