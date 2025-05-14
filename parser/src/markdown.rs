@@ -1,8 +1,8 @@
 use chumsky::prelude::*;
 
-use crate::{InlineMarkdown, LinkHeader, Markdown, Spanned};
+use crate::{InlineMarkdown, LinkHeader, Markdown, ParseError, Spanned};
 
-pub fn header_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, extra::Err<Rich<'a, char>>> {
+pub fn header_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, ParseError<'a>> {
     let hashes = just('#')
         .repeated()
         .at_least(1)
@@ -27,8 +27,7 @@ pub fn header_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, extra::Err<
         .labelled("Header Parser")
 }
 
-pub fn tag_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra::Err<Rich<'a, char>>>
-{
+pub fn tag_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
     just('#')
         .ignore_then(
             any()
@@ -41,8 +40,7 @@ pub fn tag_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra::E
         .labelled("Tag Parser")
 }
 
-pub fn footnote_parser<'a>(
-) -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra::Err<Rich<'a, char>>> {
+pub fn footnote_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
     just("[^")
         .ignore_then(
             any()
@@ -56,8 +54,7 @@ pub fn footnote_parser<'a>(
         .labelled("Footnote Parser")
 }
 
-pub fn footnote_definition_parser<'a>(
-) -> impl Parser<'a, &'a str, Markdown<'a>, extra::Err<Rich<'a, char>>> {
+pub fn footnote_definition_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, ParseError<'a>> {
     let id = just("[^")
         .ignore_then(
             any()
@@ -82,8 +79,7 @@ pub fn footnote_definition_parser<'a>(
         .labelled("Footnote Definition Parser")
 }
 
-pub fn wikilink_parser<'a>(
-) -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra::Err<Rich<'a, char>>> {
+pub fn wikilink_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
     let alias = any()
         .filter(|c: &char| *c != ']' && *c != '\n')
         .repeated()
@@ -144,8 +140,7 @@ pub fn wikilink_parser<'a>(
         .labelled("WikiLink")
 }
 
-pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra::Err<Rich<'a, char>>>
-{
+pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
     let title = any()
         .filter(|c: &char| *c != ']' && *c != '\n')
         .repeated()
@@ -203,8 +198,7 @@ pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra::
         .labelled("Link Parser")
 }
 
-pub fn image_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra::Err<Rich<'a, char>>>
-{
+pub fn image_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
     let alt_text = any()
         .filter(|c: &char| *c != ']' && *c != '\n')
         .repeated()
@@ -229,8 +223,7 @@ pub fn image_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra:
         .labelled("Image Parser")
 }
 
-pub fn plain_text_parser<'a>(
-) -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra::Err<Rich<'a, char>>> {
+pub fn plain_text_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
     let stop_condition = choice((
         just("#"),
         just("["),
@@ -250,8 +243,7 @@ pub fn plain_text_parser<'a>(
         .labelled("Plain Text")
 }
 
-pub fn inline_parser<'a>(
-) -> impl Parser<'a, &'a str, InlineMarkdown<'a>, extra::Err<Rich<'a, char>>> {
+pub fn inline_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
     choice((
         tag_parser(),
         image_parser(),
@@ -263,8 +255,7 @@ pub fn inline_parser<'a>(
     .labelled("Inline Parser")
 }
 
-pub fn paragraph_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, extra::Err<Rich<'a, char>>>
-{
+pub fn paragraph_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, ParseError<'a>> {
     inline_parser()
         .map_with(|inline_block, e| Spanned(inline_block, e.span()))
         .repeated()
