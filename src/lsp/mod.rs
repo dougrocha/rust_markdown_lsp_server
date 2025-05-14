@@ -7,6 +7,8 @@ pub mod initialize;
 pub mod server;
 pub mod workspace;
 
+mod helpers;
+
 use serde::{Deserialize, Serialize};
 
 use crate::document::DocumentUri;
@@ -17,6 +19,13 @@ pub struct Range {
     pub start: Position,
     /// The range's end position.
     pub end: Position,
+}
+
+impl Range {
+    /// If the selection is a range, the start and end are not equal
+    pub fn is_range(&self) -> bool {
+        self.start.line != self.end.line
+    }
 }
 
 #[derive(Deserialize, Debug)]
@@ -35,12 +44,12 @@ pub struct VersionedTextDocumentIdentifier {
     pub version: usize,
 }
 
-#[derive(Deserialize, Debug)]
+#[derive(Serialize, Deserialize, Debug)]
 pub struct TextDocumentIdentifier {
     uri: DocumentUri,
 }
 
-#[derive(Deserialize, Serialize, Debug, PartialEq)]
+#[derive(Deserialize, Serialize, Debug, PartialEq, Clone, Copy)]
 pub struct Position {
     pub line: usize,
     pub character: usize,
