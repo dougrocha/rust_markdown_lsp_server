@@ -1,5 +1,5 @@
 use log::info;
-use lsp_types::uri::URI;
+use lsp_types::{code_action::CodeActionKind, uri::URI};
 use serde::{Deserialize, Serialize};
 
 use crate::message::{Request, Response};
@@ -43,12 +43,20 @@ pub struct ServerCapabilities {
     text_document_sync: Option<usize>,
     hover_provider: bool,
     definition_provider: bool,
-    code_action_provider: bool,
+    code_action_provider: CodeActionProvider,
+}
+
+#[derive(Serialize, Debug)]
+#[serde(rename_all = "camelCase")]
+pub struct CodeActionProvider {
+    pub code_action_kinds: Option<Vec<CodeActionKind>>,
 }
 
 pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
+    let test: serde_json::Value = serde_json::from_value(request.params.clone()).unwrap();
     let initialize_params: InitializeParams = serde_json::from_value(request.params).unwrap();
 
+    info!("{:?}", serde_json::to_string(&test));
     info!("{:?}", initialize_params.client_info);
 
     let initialize_result = InitializeResult {
@@ -56,7 +64,9 @@ pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
             text_document_sync: Some(1),
             hover_provider: true,
             definition_provider: true,
-            code_action_provider: true,
+            code_action_provider: CodeActionProvider {
+                code_action_kinds: Some(vec![CodeActionKind::RefactorExtract]),
+            },
         },
         server_info: Some(ServerInfo {
             name: "doug-learn-lsp".to_string(),

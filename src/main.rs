@@ -5,8 +5,10 @@ use std::{
 
 use log::{debug, error, info, warn};
 use lsp_types::uri::URI;
+use parser::{markdown_parser, Parser};
 use rust_markdown_lsp::{
     lsp::{
+        code_action::process_code_action,
         did_change::process_did_change,
         did_open::process_did_open,
         goto_definition::process_goto_definition,
@@ -25,6 +27,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         Config::default(),
         File::create("log.txt").expect("Failed to create log file"),
     );
+
+    // let output = std::fs::read_to_string("test.md").unwrap();
+    // let (output, errors) = markdown_parser().parse(&output).into_output_errors();
+    // println!("Parsed frontmatter: {:#?}", output.unwrap().frontmatter);
+    // println!("Parsed errors: {:#?}", errors);
+    //
+    // return Ok(());
 
     let stdin = io::stdin();
     let stdout = io::stdout();
@@ -115,15 +124,19 @@ fn handle_request<W: Write>(
     request: rust_markdown_lsp::message::Request,
     writer: &mut W,
 ) -> Result<(), Box<dyn std::error::Error>> {
+    debug!("Handling request: {}", request.method);
     let result = match request.method.as_str() {
         "textDocument/hover" => process_hover(lsp, request),
         "textDocument/definition" => process_goto_definition(lsp, request),
+        "textDocument/codeAction" => process_code_action(lsp, request),
         _ => {
             warn!("Unimplemented Request: {}", request.method);
             return Ok(());
         }
     };
     let msg = encode_message(&result)?;
+
+    log::debug!("{:#?}", msg);
     write_msg(writer, &msg)?;
     Ok(())
 }
