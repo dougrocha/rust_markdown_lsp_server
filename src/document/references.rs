@@ -3,7 +3,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use super::uri::URI;
+use lsp_types::uri::URI;
 
 #[derive(Debug)]
 pub enum Reference {

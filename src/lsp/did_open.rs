@@ -1,8 +1,9 @@
+use lsp_types::TextDocumentItem;
 use serde::Deserialize;
 
 use crate::message::Notification;
 
-use super::{server::LspServer, TextDocumentItem};
+use super::server::LspServer;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

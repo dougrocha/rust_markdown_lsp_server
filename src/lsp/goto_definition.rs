@@ -1,13 +1,12 @@
-use super::{Position, Range, TextDocumentPositionParams};
 use crate::{
     document::{
         references::{combine_uri_and_relative_path, LinkData, Reference},
-        uri::URI,
         Document,
     },
     lsp::server::LspServer,
     message::{error_codes, Request, Response},
 };
+use lsp_types::{uri::URI, Range, TextDocumentPositionParams};
 use miette::{IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
 
@@ -46,7 +45,7 @@ fn process_goto_definition_internal(
     let reference = document.find_reference_at_position(position);
 
     if let Some(Reference::Link(link) | Reference::WikiLink(link)) = &reference {
-        let (document, span) = find_definition(lsp, link)?;
+        let (document, span) = find_definition(lsp, &link)?;
         let range = document.span_to_range(span);
 
         Ok(GotoDefinitionResponse {

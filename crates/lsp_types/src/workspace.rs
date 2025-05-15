@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-use crate::document::DocumentUri;
+use crate::DocumentUri;
 
 use super::{Range, TextDocumentIdentifier};
 
@@ -26,6 +26,7 @@ pub struct ChangeAnnotation {
 pub struct OptionalVersionedTextDocumentIdentifier {
     #[serde(flatten)]
     pub text_document: TextDocumentIdentifier,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<usize>,
 }
 
@@ -38,20 +39,26 @@ pub struct TextDocumentEdit {
 
 #[derive(Serialize, Debug)]
 pub struct CreateFileOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub overwrite: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_if_exists: Option<bool>,
 }
 
 #[derive(Serialize, Debug)]
 pub struct CreateFile {
     pub uri: DocumentUri,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<CreateFileOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub annotation_id: Option<ChangeAnnotationIdentifier>,
 }
 
 #[derive(Serialize, Debug)]
 pub struct RenameFileOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub overwrite: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_if_exists: Option<bool>,
 }
 
@@ -59,25 +66,31 @@ pub struct RenameFileOptions {
 pub struct RenameFile {
     pub old_uri: DocumentUri,
     pub new_uri: DocumentUri,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<RenameFileOptions>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub annotation_id: Option<ChangeAnnotationIdentifier>,
 }
 
 #[derive(Serialize, Debug)]
 pub struct DeleteFileOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub recursive: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub ignore_if_not_exists: Option<bool>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub annotation_id: Option<ChangeAnnotationIdentifier>,
 }
 
 #[derive(Serialize, Debug)]
 pub struct DeleteFile {
     pub uri: DocumentUri,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub options: Option<DeleteFileOptions>,
 }
 
 #[derive(Serialize, Debug)]
-#[serde(untagged)]
+#[serde(tag = "kind")]
 pub enum ResourceOp {
     Create(CreateFile),
     Rename(RenameFile),
@@ -95,7 +108,7 @@ pub type ChangeAnnotationIdentifier = String;
 
 #[derive(Serialize, Debug)]
 #[serde(untagged)]
-pub enum DocumentEdits {
+pub enum DocumentChanges {
     Edits(Vec<TextDocumentEdit>),
     Operations(Vec<DocumentChangeOperation>),
 }
@@ -103,7 +116,10 @@ pub enum DocumentEdits {
 #[derive(Serialize, Debug)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceEdit {
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub changes: Option<HashMap<DocumentUri, Vec<TextEdit>>>,
-    pub document_changes: Option<Vec<DocumentEdits>>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub document_changes: Option<DocumentChanges>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub change_annotations: Option<HashMap<ChangeAnnotationIdentifier, Vec<ChangeAnnotation>>>,
 }

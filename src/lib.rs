@@ -1,4 +1,4 @@
-use document::references::{LinkData, LinkHeader, Reference};
+use document::references::Reference;
 
 pub mod document;
 pub mod lsp;

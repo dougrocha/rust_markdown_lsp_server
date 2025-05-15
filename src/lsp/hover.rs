@@ -1,3 +1,4 @@
+use lsp_types::{Range, TextDocumentPositionParams};
 use miette::{Context, IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
 
@@ -7,7 +8,7 @@ use crate::{
     Reference,
 };
 
-use super::{helpers, Range, TextDocumentPositionParams};
+use super::helpers;
 
 #[derive(Deserialize, Debug)]
 pub struct HoverParams {
@@ -44,7 +45,7 @@ fn process_hover_internal(lsp: &mut LspServer, request: &Request) -> Result<Hove
 
     let (contents, range) =
         if let Some(Reference::Link(link) | Reference::WikiLink(link)) = reference {
-            let contents = helpers::get_content(lsp, link)?;
+            let contents = helpers::get_content(lsp, &link)?;
             let range = document.span_to_range(&link.span);
             (contents, Some(range))
         } else {

@@ -1,14 +1,9 @@
 pub mod references;
-pub mod uri;
 
+use lsp_types::{uri::URI, Position, Range};
 use parser::{markdown_parser, InlineMarkdown, Markdown, Parser, Spanned};
 use references::{LinkData, LinkHeader, Reference};
 use ropey::Rope;
-use uri::URI;
-
-use crate::lsp::{Position, Range};
-
-pub type DocumentUri = URI;
 
 #[derive(Debug)]
 pub struct Document {
