@@ -2,7 +2,7 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-use crate::DocumentUri;
+use crate::{DocumentUri, uri::URI};
 
 use super::{Range, TextDocumentIdentifier};
 
@@ -28,6 +28,15 @@ pub struct OptionalVersionedTextDocumentIdentifier {
     pub text_document: TextDocumentIdentifier,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub version: Option<usize>,
+}
+
+impl OptionalVersionedTextDocumentIdentifier {
+    pub fn new(uri: URI, version: Option<usize>) -> Self {
+        OptionalVersionedTextDocumentIdentifier {
+            text_document: TextDocumentIdentifier { uri },
+            version,
+        }
+    }
 }
 
 #[derive(Serialize, Debug)]
@@ -90,7 +99,7 @@ pub struct DeleteFile {
 }
 
 #[derive(Serialize, Debug)]
-#[serde(tag = "kind")]
+#[serde(tag = "kind", rename_all = "lowercase")]
 pub enum ResourceOp {
     Create(CreateFile),
     Rename(RenameFile),
@@ -102,6 +111,18 @@ pub enum ResourceOp {
 pub enum DocumentChangeOperation {
     Op(ResourceOp),
     Edit(TextDocumentEdit),
+}
+
+impl From<ResourceOp> for DocumentChangeOperation {
+    fn from(op: ResourceOp) -> Self {
+        DocumentChangeOperation::Op(op)
+    }
+}
+
+impl From<TextDocumentEdit> for DocumentChangeOperation {
+    fn from(edit: TextDocumentEdit) -> Self {
+        DocumentChangeOperation::Edit(edit)
+    }
 }
 
 pub type ChangeAnnotationIdentifier = String;

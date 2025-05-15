@@ -28,6 +28,7 @@ pub struct CodeAction {
     pub title: String,
     pub kind: Option<CodeActionKind>,
     pub edit: Option<WorkspaceEdit>,
+    pub command: Option<Command>,
 }
 
 #[derive(Serialize, Debug)]
@@ -35,6 +36,18 @@ pub struct CodeAction {
 pub enum CodeActionOrCommand {
     Command(Command),
     CodeAction(CodeAction),
+}
+
+impl From<Command> for CodeActionOrCommand {
+    fn from(value: Command) -> Self {
+        CodeActionOrCommand::Command(value)
+    }
+}
+
+impl From<CodeAction> for CodeActionOrCommand {
+    fn from(value: CodeAction) -> Self {
+        CodeActionOrCommand::CodeAction(value)
+    }
 }
 
 pub type CodeActionResponse = Option<Vec<CodeActionOrCommand>>;
