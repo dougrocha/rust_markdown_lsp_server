@@ -1,6 +1,8 @@
 use std::{collections::HashMap, path::PathBuf};
 
-use crate::document::{uri::URI, Document};
+use lsp_types::uri::URI;
+
+use crate::document::Document;
 
 #[derive(Default)]
 pub struct LspServer {

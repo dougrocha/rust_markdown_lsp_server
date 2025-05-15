@@ -1,10 +1,8 @@
 use log::info;
+use lsp_types::uri::URI;
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    document::uri::URI,
-    message::{Request, Response},
-};
+use crate::message::{Request, Response};
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

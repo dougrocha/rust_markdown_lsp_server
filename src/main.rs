@@ -4,8 +4,8 @@ use std::{
 };
 
 use log::{debug, error, info, warn};
+use lsp_types::uri::URI;
 use rust_markdown_lsp::{
-    document::uri::URI,
     lsp::{
         did_change::process_did_change,
         did_open::process_did_open,

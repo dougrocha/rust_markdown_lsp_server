@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::{fmt::Display, path::PathBuf};
 
 use serde::{Deserialize, Deserializer, Serialize};
 
@@ -40,7 +40,7 @@ impl<'de> Deserialize<'de> for URI {
 }
 
 impl URI {
-    pub fn to_path_buf(&self) -> std::path::PathBuf {
+    pub fn to_path_buf(&self) -> PathBuf {
         std::path::PathBuf::from(&self.0)
     }
 
@@ -49,7 +49,7 @@ impl URI {
     }
 }
 
-impl std::fmt::Display for URI {
+impl Display for URI {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.0)
     }

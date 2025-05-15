@@ -36,6 +36,8 @@ pub fn get_content(lsp: &LspServer, link_data: &LinkData) -> Result<String> {
     }
 }
 
+// TODO: Double check to see if the extraction is correct. Sometimes a header may extract a divider
+// along with it. That is not intended
 /// Extracts the content header section from the provided links.
 pub fn extract_header_section<'a>(
     header: &LinkHeader,

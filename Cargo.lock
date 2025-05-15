@@ -202,6 +202,14 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
 
 [[package]]
+name = "lsp_types"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "memchr"
 version = "2.7.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -332,6 +340,7 @@ version = "0.1.0"
 dependencies = [
  "ariadne",
  "log",
+ "lsp_types",
  "miette",
  "parser",
  "ropey",
