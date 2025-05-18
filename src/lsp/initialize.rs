@@ -1,29 +1,42 @@
 use log::info;
 use lsp_types::{
-    CodeActionKind, CodeActionOptions, HoverProviderCapability, InitializeParams, InitializeResult,
-    OneOf, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+    CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions,
+    HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ServerCapabilities,
+    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions,
 };
+use miette::{IntoDiagnostic, Result};
 
 use crate::message::{Request, Response};
 
-pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
-    let test: serde_json::Value = serde_json::from_value(request.params.clone()).unwrap();
-    let initialize_params: InitializeParams = serde_json::from_value(request.params).unwrap();
+pub fn process_initialize(request: Request) -> Result<(Response, InitializeParams)> {
+    let initialize_params: InitializeParams =
+        serde_json::from_value(request.params).into_diagnostic()?;
 
-    info!("{:?}", serde_json::to_string(&test));
-    info!("{:?}", initialize_params.client_info);
+    info!("Client Info: {:?}", initialize_params.client_info);
 
     let initialize_result = InitializeResult {
         capabilities: ServerCapabilities {
             text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
             hover_provider: Some(HoverProviderCapability::Simple(true)),
             definition_provider: Some(OneOf::Left(true)),
-            code_action_provider: Some(lsp_types::CodeActionProviderCapability::Options(
-                CodeActionOptions {
-                    code_action_kinds: Some(vec![CodeActionKind::REFACTOR_EXTRACT]),
-                    ..Default::default()
+            code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
+                code_action_kinds: Some(vec![CodeActionKind::REFACTOR_EXTRACT]),
+                ..Default::default()
+            })),
+            completion_provider: Some(CompletionOptions {
+                resolve_provider: Some(true),
+                trigger_characters: Some(vec![
+                    "#".to_string(),
+                    "[".to_string(),
+                    ":".to_string(),
+                    "(".to_string(),
+                ]),
+                all_commit_characters: None,
+                work_done_progress_options: WorkDoneProgressOptions {
+                    work_done_progress: None,
                 },
-            )),
+                completion_item: None,
+            }),
             ..Default::default()
         },
         server_info: Some(ServerInfo {
@@ -33,10 +46,10 @@ pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
     };
     let result = serde_json::to_value(initialize_result).unwrap();
 
-    log::debug!("{}:", result);
+    log::trace!("InitializeResult: {:?}", result);
 
-    (
+    Ok((
         Response::from_ok(request.id, Some(result)),
         initialize_params,
-    )
+    ))
 }

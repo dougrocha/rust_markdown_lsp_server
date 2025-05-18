@@ -1,35 +1,23 @@
-use std::{collections::HashMap, str::FromStr};
+use std::str::FromStr;
 
 use lsp_types::{
-    error_codes, ChangeAnnotation, CodeAction, CodeActionKind, CodeActionOrCommand,
-    CodeActionParams, CodeActionResponse, Command, CreateFile, CreateFileOptions,
-    DocumentChangeOperation, DocumentChanges, OneOf, OptionalVersionedTextDocumentIdentifier,
-    Position, Range, ResourceOp, TextDocumentEdit, TextEdit, Uri, WorkspaceEdit,
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse, Command,
+    CreateFile, DocumentChangeOperation, DocumentChanges, OneOf,
+    OptionalVersionedTextDocumentIdentifier, Position, Range, ResourceOp, TextDocumentEdit,
+    TextEdit, Uri, WorkspaceEdit,
 };
 use miette::{miette, Context, IntoDiagnostic, Result};
 
 use crate::{
     document::references::{LinkHeader, Reference},
     lsp::{helpers::extract_header_section, server::LspServer},
-    message::{Request, Response},
     path::get_parent_path,
 };
 
-pub fn process_code_action(lsp: &mut LspServer, request: Request) -> Response {
-    match process_code_action_internal(lsp, &request) {
-        Ok(result) => Response::from_ok(request.id, result),
-        Err(e) => Response::from_error(request.id, error_codes::REQUEST_FAILED, e.to_string()),
-    }
-}
-
-fn process_code_action_internal(
+pub fn process_code_action(
     lsp: &mut LspServer,
-    request: &Request,
-) -> Result<CodeActionResponse> {
-    let params: CodeActionParams = serde_json::from_value(request.params.clone())
-        .into_diagnostic()
-        .context("Failed to parse code action params")?;
-
+    params: CodeActionParams,
+) -> Result<Option<CodeActionResponse>> {
     let uri = params.text_document.uri;
     let range = params.range;
 
@@ -40,17 +28,21 @@ fn process_code_action_internal(
 
     let actions: Vec<CodeActionOrCommand> = Vec::new();
 
-    Ok(actions)
+    Ok(Some(actions))
 }
 
-fn handle_non_range(lsp: &mut LspServer, uri: &Uri, range: &Range) -> Result<CodeActionResponse> {
+fn handle_non_range(
+    lsp: &mut LspServer,
+    uri: &Uri,
+    range: &Range,
+) -> Result<Option<CodeActionResponse>> {
     let document = lsp
         .get_document(uri)
         .context("Document should exist somewhere")?;
     let slice = document.content.slice(..);
 
     let Some(reference) = document.find_reference_at_position(range.start) else {
-        return Ok(vec![]);
+        return Ok(Some(vec![]));
     };
 
     let mut actions: Vec<CodeActionOrCommand> = Vec::new();
@@ -139,5 +131,5 @@ fn handle_non_range(lsp: &mut LspServer, uri: &Uri, range: &Range) -> Result<Cod
         _ => return Err(miette!("Other cases not handled yet.")),
     }
 
-    Ok(actions)
+    Ok(Some(actions))
 }
