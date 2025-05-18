@@ -4,37 +4,14 @@ use crate::{
         Document,
     },
     lsp::server::LspServer,
-    message::{Request, Response},
 };
-use lsp_types::{error_codes, Range, TextDocumentPositionParams, Uri};
-use miette::{IntoDiagnostic, Result};
-use serde::{Deserialize, Serialize};
+use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location};
+use miette::Result;
 
-#[derive(Deserialize, Debug)]
-pub struct GotoDefinitionParams {
-    #[serde(flatten)]
-    text_document_position_params: TextDocumentPositionParams,
-}
-
-#[derive(Serialize, Debug)]
-pub struct GotoDefinitionResponse {
-    uri: Uri,
-    range: Range,
-}
-
-pub fn process_goto_definition(lsp: &mut LspServer, request: Request) -> Response {
-    match process_goto_definition_internal(lsp, &request) {
-        Ok(result) => Response::from_ok(request.id, result),
-        Err(e) => Response::from_error(request.id, error_codes::REQUEST_FAILED, e.to_string()),
-    }
-}
-
-fn process_goto_definition_internal(
+pub fn process_goto_definition(
     lsp: &mut LspServer,
-    request: &Request,
-) -> Result<GotoDefinitionResponse> {
-    let params: GotoDefinitionParams =
-        serde_json::from_value(request.params.clone()).into_diagnostic()?;
+    params: GotoDefinitionParams,
+) -> Result<Option<GotoDefinitionResponse>> {
     let uri = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
@@ -48,10 +25,10 @@ fn process_goto_definition_internal(
         let (document, span) = find_definition(lsp, &link)?;
         let range = document.span_to_range(span);
 
-        Ok(GotoDefinitionResponse {
+        Ok(Some(GotoDefinitionResponse::from(Location {
             uri: document.uri.clone(),
             range,
-        })
+        })))
     } else {
         Err(miette::miette!("Definition not found"))
     }

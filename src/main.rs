@@ -1,23 +1,31 @@
+use log::{debug, error, info, warn};
+use lsp_types::{
+    error_codes,
+    request::{self, Request as LspRequest},
+    InitializeParams, Uri,
+};
+use miette::{miette, Context, IntoDiagnostic, Result};
+use rust_markdown_lsp::{
+    dispatch_lsp_request,
+    lsp::{
+        code_action::process_code_action,
+        completion::{process_completion, process_completion_resolve},
+        did_change::process_did_change,
+        did_open::process_did_open,
+        goto_definition::process_goto_definition,
+        hover::process_hover,
+        initialize::process_initialize,
+        server::LspServer,
+    },
+    message::{Message, Request, Response},
+    rpc::{encode_message, handle_message, write_msg},
+};
+use simplelog::*;
 use std::{
     fs::File,
     io::{self, Write},
     str::FromStr,
 };
-
-use log::{debug, error, info, warn};
-use lsp_types::{InitializeParams, Uri};
-use miette::{miette, Context, IntoDiagnostic, Result};
-use parser::{markdown_parser, Parser};
-use rust_markdown_lsp::{
-    lsp::{
-        code_action::process_code_action, did_change::process_did_change,
-        did_open::process_did_open, goto_definition::process_goto_definition, hover::process_hover,
-        initialize::process_initialize, server::LspServer,
-    },
-    message::Message,
-    rpc::{encode_message, handle_message, write_msg},
-};
-use simplelog::*;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let _ = WriteLogger::init(
@@ -54,9 +62,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                         break;
                     }
                     _ => {
-                        if let Err(e) = handle_request(&mut lsp, request, &mut writer) {
-                            error!("Error handling request: {}", e)
-                        }
+                        dispatch_lsp_request!(&mut lsp, request, &mut writer, {
+                            request::HoverRequest => process_hover,
+                            request::GotoDefinition => process_goto_definition,
+                            request::CodeActionRequest => process_code_action,
+                        });
                     }
                 },
                 Message::Notification(notification) => {
@@ -113,7 +123,7 @@ fn handle_initialize<R: io::BufRead, W: Write>(
 
     if let Message::Request(request) = message {
         if request.method == "initialize" {
-            let (result, params) = process_initialize(request);
+            let (result, params) = process_initialize(request)?;
             let msg = encode_message(&result)?;
             write_msg(writer, &msg)?;
             return Ok(params);
@@ -125,22 +135,29 @@ fn handle_initialize<R: io::BufRead, W: Write>(
     Err(miette!("First message was not a request"))
 }
 
-fn handle_request<W: Write>(
+fn handle_request<R, W, F>(
     lsp: &mut LspServer,
-    request: rust_markdown_lsp::message::Request,
+    raw_request: Request,
     writer: &mut W,
-) -> Result<()> {
-    debug!("Handling request: {}", request.method);
-    let result = match request.method.as_str() {
-        "textDocument/hover" => process_hover(lsp, request),
-        "textDocument/definition" => process_goto_definition(lsp, request),
-        "textDocument/codeAction" => process_code_action(lsp, request),
-        _ => {
-            warn!("Unimplemented Request: {}", request.method);
-            return Ok(());
+    handler: F,
+) -> Result<()>
+where
+    R: LspRequest,
+    W: Write,
+    F: FnOnce(&mut LspServer, R::Params) -> Result<R::Result>,
+{
+    let params: R::Params = serde_json::from_value(raw_request.params)
+        .into_diagnostic()
+        .context("Failed to deserialize request params")?;
+
+    let response = match handler(lsp, params) {
+        Ok(result) => Response::from_ok(raw_request.id, result),
+        Err(err) => {
+            Response::from_error(raw_request.id, error_codes::REQUEST_FAILED, err.to_string())
         }
     };
-    let msg = encode_message(&result)?;
+
+    let msg = encode_message(&response)?;
 
     log::debug!("{:#?}", msg);
     write_msg(writer, &msg)?;
