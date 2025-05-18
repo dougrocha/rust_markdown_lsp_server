@@ -1,20 +1,19 @@
-use std::str::FromStr;
+use std::{collections::HashMap, str::FromStr};
 
 use lsp_types::{
-    error_codes, CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams,
-    CodeActionResponse, Command, CreateFile, DocumentChangeOperation, DocumentChanges, OneOf,
-    OptionalVersionedTextDocumentIdentifier, Position, Range, ResourceOp, TextDocumentEdit,
-    TextEdit, Uri, WorkspaceEdit,
+    error_codes, ChangeAnnotation, CodeAction, CodeActionKind, CodeActionOrCommand,
+    CodeActionParams, CodeActionResponse, Command, CreateFile, CreateFileOptions,
+    DocumentChangeOperation, DocumentChanges, OneOf, OptionalVersionedTextDocumentIdentifier,
+    Position, Range, ResourceOp, TextDocumentEdit, TextEdit, Uri, WorkspaceEdit,
 };
 use miette::{miette, Context, IntoDiagnostic, Result};
 
 use crate::{
     document::references::{LinkHeader, Reference},
-    lsp::server::LspServer,
+    lsp::{helpers::extract_header_section, server::LspServer},
     message::{Request, Response},
+    path::get_parent_path,
 };
-
-use super::helpers::extract_header_section;
 
 pub fn process_code_action(lsp: &mut LspServer, request: Request) -> Response {
     match process_code_action_internal(lsp, &request) {
@@ -66,8 +65,10 @@ fn handle_non_range(lsp: &mut LspServer, uri: &Uri, range: &Range) -> Result<Cod
                 slice,
             );
 
+            let parent = get_parent_path(uri).unwrap();
             let new_file_uri = Uri::from_str(&format!(
-                "file:///Users/douglasrocha/dev/rust_markdown_lsp/{}.md",
+                "file://{}/{}.md",
+                parent,
                 (std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
@@ -104,6 +105,7 @@ fn handle_non_range(lsp: &mut LspServer, uri: &Uri, range: &Range) -> Result<Cod
                         },
                         edits: vec![OneOf::Left(TextEdit::new(
                             document.span_to_range(&range),
+                            // TODO: Change this from empty to link to new file and link
                             "".to_string(),
                         ))],
                     }),
