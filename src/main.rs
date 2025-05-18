@@ -1,20 +1,18 @@
 use std::{
     fs::File,
     io::{self, Write},
+    str::FromStr,
 };
 
 use log::{debug, error, info, warn};
-use lsp_types::uri::URI;
+use lsp_types::{InitializeParams, Uri};
+use miette::{miette, Context, IntoDiagnostic, Result};
 use parser::{markdown_parser, Parser};
 use rust_markdown_lsp::{
     lsp::{
-        code_action::process_code_action,
-        did_change::process_did_change,
-        did_open::process_did_open,
-        goto_definition::process_goto_definition,
-        hover::process_hover,
-        initialize::{process_initialize, InitializeParams},
-        server::LspServer,
+        code_action::process_code_action, did_change::process_did_change,
+        did_open::process_did_open, goto_definition::process_goto_definition, hover::process_hover,
+        initialize::process_initialize, server::LspServer,
     },
     message::Message,
     rpc::{encode_message, handle_message, write_msg},
@@ -74,26 +72,34 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn load_workspaces(
-    lsp: &mut LspServer,
-    init_params: InitializeParams,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(folders) = init_params.workspace_folders {
-        let folder = folders.first().ok_or("Workspace folder does not exist")?;
-        lsp.set_root(&folder.uri);
+fn load_workspaces(lsp: &mut LspServer, init_params: InitializeParams) -> Result<()> {
+    let Some(folders) = init_params.workspace_folders else {
+        return Ok(());
+    };
 
-        let path = folder.uri.as_str();
-        let markdowns = walkdir::WalkDir::new(path)
-            .into_iter()
-            .filter_map(|e| e.ok())
-            .filter(|e| e.path().extension().is_some_and(|ext| ext == "md"))
-            .map(|e| e.path().to_string_lossy().to_string())
-            .collect::<Vec<String>>();
+    let folder = folders
+        .first()
+        .context("No workspace folders provided by the client")?;
+    let uri = &folder.uri;
+    lsp.set_root(uri.clone());
 
-        for md_file in markdowns {
-            let text = std::fs::read_to_string(&md_file)?;
-            lsp.open_document(URI(md_file), &text);
-        }
+    let path = uri.path();
+    let markdown_files = walkdir::WalkDir::new(path.as_str())
+        .into_iter()
+        .filter_map(|entry| entry.ok())
+        .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "md"));
+
+    for entry in markdown_files {
+        let path_str = entry.path().to_string_lossy().to_string();
+        let contents = std::fs::read_to_string(&entry.path())
+            .into_diagnostic()
+            .with_context(|| format!("Failed to read markdown file: {}", path_str))?;
+
+        let uri = Uri::from_str(&path_str)
+            .into_diagnostic()
+            .with_context(|| format!("Invalid URI from path: {}", path_str))?;
+
+        lsp.open_document(uri, &contents);
     }
 
     Ok(())
@@ -102,7 +108,7 @@ fn load_workspaces(
 fn handle_initialize<R: io::BufRead, W: Write>(
     reader: &mut R,
     writer: &mut W,
-) -> Result<InitializeParams, Box<dyn std::error::Error>> {
+) -> Result<InitializeParams> {
     let message = handle_message(reader)?;
 
     if let Message::Request(request) = message {
@@ -113,17 +119,17 @@ fn handle_initialize<R: io::BufRead, W: Write>(
             return Ok(params);
         }
 
-        return Err("First request MUST be initialize".into());
-    };
+        return Err(miette!("First request must be 'initialize'"));
+    }
 
-    Err("First message was not a request".into())
+    Err(miette!("First message was not a request"))
 }
 
 fn handle_request<W: Write>(
     lsp: &mut LspServer,
     request: rust_markdown_lsp::message::Request,
     writer: &mut W,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<()> {
     debug!("Handling request: {}", request.method);
     let result = match request.method.as_str() {
         "textDocument/hover" => process_hover(lsp, request),

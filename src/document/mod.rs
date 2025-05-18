@@ -1,19 +1,20 @@
 pub mod references;
 
-use lsp_types::{uri::URI, Position, Range};
+use lsp_types::{Position, Range, Uri};
 use parser::{markdown_parser, InlineMarkdown, Markdown, Parser, Spanned};
 use references::{LinkData, LinkHeader, Reference};
 use ropey::Rope;
+use std::str::FromStr;
 
 #[derive(Debug)]
 pub struct Document {
-    pub uri: URI,
+    pub uri: Uri,
     pub content: Rope,
     pub references: Vec<Reference>,
 }
 
 impl Document {
-    pub fn new(uri: URI, content: &str) -> Self {
+    pub fn new(uri: Uri, content: &str) -> Self {
         let mut s = Self {
             uri,
             content: Rope::from_str(content),
@@ -33,14 +34,14 @@ impl Document {
         let Position { line, character } = position;
         let text = self.content.slice(..);
 
-        let line_str = text.line(line);
+        let line_str = text.line(line as usize);
         let character_byte_pos = line_str
             .chars()
-            .take(character)
+            .take(character as usize)
             .map(|c| c.len_utf8())
             .sum::<usize>();
 
-        let line_byte_idx = text.line_to_byte(line);
+        let line_byte_idx = text.line_to_byte(line as usize);
         let cursor_byte_pos = line_byte_idx + character_byte_pos;
 
         self.references.iter().find(|reference| match reference {
@@ -124,29 +125,28 @@ impl Document {
         let end_char = self.content.byte_to_char(span.end) - line_end_char_idx;
 
         Range {
-            start: Position::new(start_line, start_char),
-            end: Position::new(end_line, end_char),
+            start: Position::new(start_line as u32, start_char as u32),
+            end: Position::new(end_line as u32, end_char as u32),
         }
     }
 }
 
 // Helper function to create a link reference
 fn create_link_reference(
-    source: &URI,
+    source: &Uri,
     inline_span: std::ops::Range<usize>,
     target: &str,
     title: Option<&str>,
     header: Option<parser::LinkHeader>,
 ) -> Reference {
-    let link_data = LinkData {
+    Reference::Link(LinkData {
         source: source.clone(),
         span: inline_span,
-        target: URI(target.to_string()),
+        target: Uri::from_str(target).unwrap_or(Uri::from_str("").unwrap()),
         title: title.map(|t| t.to_string()),
         header: header.map(|parser::LinkHeader { level, content }| LinkHeader {
             level,
             content: content.to_string(),
         }),
-    };
-    Reference::Link(link_data)
+    })
 }

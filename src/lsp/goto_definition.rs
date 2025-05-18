@@ -4,9 +4,9 @@ use crate::{
         Document,
     },
     lsp::server::LspServer,
-    message::{error_codes, Request, Response},
+    message::{Request, Response},
 };
-use lsp_types::{uri::URI, Range, TextDocumentPositionParams};
+use lsp_types::{error_codes, Range, TextDocumentPositionParams, Uri};
 use miette::{IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
 
@@ -18,14 +18,14 @@ pub struct GotoDefinitionParams {
 
 #[derive(Serialize, Debug)]
 pub struct GotoDefinitionResponse {
-    uri: URI,
+    uri: Uri,
     range: Range,
 }
 
 pub fn process_goto_definition(lsp: &mut LspServer, request: Request) -> Response {
     match process_goto_definition_internal(lsp, &request) {
-        Ok(result) => Response::new(request.id, result),
-        Err(e) => Response::error(request.id, error_codes::INTERNAL_ERROR, e.to_string()),
+        Ok(result) => Response::from_ok(request.id, result),
+        Err(e) => Response::from_error(request.id, error_codes::REQUEST_FAILED, e.to_string()),
     }
 }
 
@@ -35,7 +35,7 @@ fn process_goto_definition_internal(
 ) -> Result<GotoDefinitionResponse> {
     let params: GotoDefinitionParams =
         serde_json::from_value(request.params.clone()).into_diagnostic()?;
-    let URI(uri) = params.text_document_position_params.text_document.uri;
+    let uri = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
     let document = lsp
@@ -61,11 +61,10 @@ fn find_definition<'a>(
     lsp: &'a LspServer,
     link_data: &'a LinkData,
 ) -> Result<(&'a Document, &'a std::ops::Range<usize>)> {
-    let file_path = combine_uri_and_relative_path(link_data)
-        .ok_or_else(|| miette::miette!("Invalid file path"))?;
+    let file_path = combine_uri_and_relative_path(&link_data.source, &link_data.target)?;
 
     let document = lsp
-        .get_document(file_path.to_string_lossy())
+        .get_document(&file_path)
         .ok_or_else(|| miette::miette!("Document not found"))?;
 
     for reference in &document.references {
