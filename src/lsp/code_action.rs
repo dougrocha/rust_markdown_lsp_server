@@ -9,7 +9,7 @@ use lsp_types::{
 use miette::{miette, Context, IntoDiagnostic, Result};
 
 use crate::{
-    document::references::{combine_uri_and_relative_path, LinkHeader, Reference},
+    document::references::{LinkHeader, Reference},
     lsp::server::LspServer,
     message::{Request, Response},
 };
@@ -79,16 +79,6 @@ fn handle_non_range(lsp: &mut LspServer, uri: &Uri, range: &Range) -> Result<Cod
 
             if let Some(header_content) = header_content {
                 let document_changes = DocumentChanges::Operations(vec![
-                    DocumentChangeOperation::Edit(TextDocumentEdit {
-                        text_document: OptionalVersionedTextDocumentIdentifier {
-                            uri: uri.clone(),
-                            version: None,
-                        },
-                        edits: vec![OneOf::Left(TextEdit::new(
-                            document.span_to_range(&range),
-                            "".to_string(),
-                        ))],
-                    }),
                     DocumentChangeOperation::Op(ResourceOp::Create(CreateFile {
                         uri: new_file_uri.clone(),
                         options: None,
@@ -105,6 +95,16 @@ fn handle_non_range(lsp: &mut LspServer, uri: &Uri, range: &Range) -> Result<Cod
                                 Position::new(slice.lines().count() as u32, 0),
                             ),
                             header_content.to_string(),
+                        ))],
+                    }),
+                    DocumentChangeOperation::Edit(TextDocumentEdit {
+                        text_document: OptionalVersionedTextDocumentIdentifier {
+                            uri: uri.clone(),
+                            version: None,
+                        },
+                        edits: vec![OneOf::Left(TextEdit::new(
+                            document.span_to_range(&range),
+                            "".to_string(),
                         ))],
                     }),
                 ]);
