@@ -9,24 +9,19 @@ use crate::{
 
 /// Retrieves the content from a linked document based on the provided link data.
 pub fn get_content(lsp: &LspServer, link_data: &LinkData) -> Result<String> {
-    let filepath = combine_uri_and_relative_path(link_data)
-        .context("Failed to combine URI and relative path")?;
-    let document = lsp
-        .get_document(filepath.to_string_lossy())
-        .ok_or_else(|| miette::miette!("Document not found"))?;
-    let slice = document.content.slice(..);
+    let file_path = combine_uri_and_relative_path(&link_data.source, &link_data.target)?;
 
+    let document = lsp
+        .get_document(&file_path)
+        .context("Linked document not found")?;
+    let slice = document.content.slice(..);
     if link_data.header.is_none() {
         return Ok(slice.to_string());
     }
 
-    let linked_doc = lsp
-        .get_document(filepath.to_string_lossy())
-        .context("Linked document not found")?;
-
     let (extracted_content, _range) = extract_header_section(
         link_data.header.as_ref().unwrap(),
-        &linked_doc.references,
+        &document.references,
         slice,
     );
 

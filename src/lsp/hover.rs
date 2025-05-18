@@ -1,10 +1,10 @@
-use lsp_types::{Range, TextDocumentPositionParams};
+use lsp_types::{error_codes, Range, TextDocumentPositionParams};
 use miette::{Context, IntoDiagnostic, Result};
 use serde::{Deserialize, Serialize};
 
 use crate::{
     lsp::server::LspServer,
-    message::{error_codes, Request, Response},
+    message::{Request, Response},
     Reference,
 };
 
@@ -24,8 +24,8 @@ pub struct HoverResponse {
 
 pub fn process_hover(lsp: &mut LspServer, request: Request) -> Response {
     match process_hover_internal(lsp, &request) {
-        Ok(result) => Response::new(request.id, result),
-        Err(e) => Response::error(request.id, error_codes::INTERNAL_ERROR, e.to_string()),
+        Ok(result) => Response::from_ok(request.id, result),
+        Err(e) => Response::from_error(request.id, error_codes::REQUEST_FAILED, e.to_string()),
     }
 }
 
@@ -38,7 +38,7 @@ fn process_hover_internal(lsp: &mut LspServer, request: &Request) -> Result<Hove
     let position = params.text_document_position_params.position;
 
     let document = lsp
-        .get_document(uri)
+        .get_document(&uri)
         .context("Document should exist somewhere")?;
 
     let reference = document.find_reference_at_position(position);

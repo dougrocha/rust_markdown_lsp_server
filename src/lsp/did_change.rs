@@ -15,16 +15,18 @@ pub struct DidChangeTextDocumentParams {
 pub fn process_did_change(lsp: &mut LspServer, notification: Notification) {
     let params: DidChangeTextDocumentParams = serde_json::from_value(notification.params).unwrap();
 
-    let uri = params.text_document.text_document_identifier.uri;
+    let uri = params.text_document.uri;
 
     for change in params.content_changes {
-        match change {
-            TextDocumentContentChangeEvent::Full(full_text_document_content_change) => {
-                lsp.update_document(&uri, &full_text_document_content_change.text);
-            }
-            TextDocumentContentChangeEvent::Incremental(
-                _incremental_text_document_content_change,
-            ) => todo!("Incremental Changes Not Supported!"),
+        let TextDocumentContentChangeEvent {
+            text,
+            range,
+            range_length,
+        } = change;
+        if range.is_none() && range_length.is_none() {
+            lsp.update_document(&uri, &text);
+        } else {
+            todo!("Incremental Changes Not Supported!");
         }
     }
 }

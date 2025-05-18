@@ -1,9 +1,8 @@
-use std::{
-    ops::Range,
-    path::{Path, PathBuf},
-};
+use miette::{bail, Result};
 
-use lsp_types::uri::URI;
+use std::{ops::Range, path::Path, str::FromStr};
+
+use lsp_types::Uri;
 
 #[derive(Debug)]
 pub enum Reference {
@@ -14,7 +13,7 @@ pub enum Reference {
         span: Range<usize>,
     },
     // Tag ID
-    Tag(URI),
+    Tag(Uri),
     Link(LinkData),
     WikiLink(LinkData),
     Footnote,
@@ -24,8 +23,8 @@ pub enum Reference {
 // Internal, External, to other hearders, maybe ids?
 #[derive(Debug, Clone, PartialEq)]
 pub struct LinkData {
-    pub source: URI,
-    pub target: URI,
+    pub source: Uri,
+    pub target: Uri,
     pub span: Range<usize>,
     pub title: Option<String>,
     pub header: Option<LinkHeader>,
@@ -37,12 +36,16 @@ pub struct LinkHeader {
     pub content: String,
 }
 
-pub fn combine_uri_and_relative_path(link_data: &LinkData) -> Option<PathBuf> {
-    let source_dir = Path::new(link_data.source.as_str()).parent()?;
-    Some(
-        source_dir
-            .join(link_data.target.as_str())
-            .canonicalize()
-            .unwrap_or(source_dir.to_path_buf()),
-    )
+pub fn combine_uri_and_relative_path(source: &Uri, target: &Uri) -> Result<Uri> {
+    let source_dir = Path::new(source.path().as_str())
+        .parent()
+        .expect("Source directory cannot be None");
+
+    let target_path = target.as_str();
+
+    let combined_path = source_dir.join(target_path);
+
+    let path = combined_path.canonicalize();
+
+    Ok(Uri::from_str(path.unwrap().as_os_str().to_str().unwrap()).unwrap())
 }

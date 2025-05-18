@@ -1,28 +1,25 @@
+use std::str::FromStr;
+
 use lsp_types::{
-    code_action::{
-        CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
-    },
-    uri::URI,
-    workspace::{
-        CreateFile, DocumentChanges, OptionalVersionedTextDocumentIdentifier, ResourceOp,
-        TextDocumentEdit, TextEdit, WorkspaceEdit,
-    },
-    Command, Position, Range,
+    error_codes, CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams,
+    CodeActionResponse, Command, CreateFile, DocumentChangeOperation, DocumentChanges, OneOf,
+    OptionalVersionedTextDocumentIdentifier, Position, Range, ResourceOp, TextDocumentEdit,
+    TextEdit, Uri, WorkspaceEdit,
 };
-use miette::{Context, IntoDiagnostic, Result};
+use miette::{miette, Context, IntoDiagnostic, Result};
 
 use crate::{
-    document::references::{LinkHeader, Reference},
+    document::references::{combine_uri_and_relative_path, LinkHeader, Reference},
     lsp::server::LspServer,
-    message::{error_codes, Request, Response},
+    message::{Request, Response},
 };
 
 use super::helpers::extract_header_section;
 
 pub fn process_code_action(lsp: &mut LspServer, request: Request) -> Response {
     match process_code_action_internal(lsp, &request) {
-        Ok(result) => Response::new(request.id, result),
-        Err(e) => Response::error(request.id, error_codes::INTERNAL_ERROR, e.to_string()),
+        Ok(result) => Response::from_ok(request.id, result),
+        Err(e) => Response::from_error(request.id, error_codes::REQUEST_FAILED, e.to_string()),
     }
 }
 
@@ -38,23 +35,23 @@ fn process_code_action_internal(
     let range = params.range;
 
     // If range is not given check if cursor in over a header
-    if !range.is_range() {
+    if range.start == range.end {
         return handle_non_range(lsp, &uri, &range);
     }
 
     let actions: Vec<CodeActionOrCommand> = Vec::new();
 
-    Ok(Some(actions))
+    Ok(actions)
 }
 
-fn handle_non_range(lsp: &mut LspServer, uri: &URI, range: &Range) -> Result<CodeActionResponse> {
+fn handle_non_range(lsp: &mut LspServer, uri: &Uri, range: &Range) -> Result<CodeActionResponse> {
     let document = lsp
         .get_document(uri)
         .context("Document should exist somewhere")?;
     let slice = document.content.slice(..);
 
     let Some(reference) = document.find_reference_at_position(range.start) else {
-        return Ok(None);
+        return Ok(vec![]);
     };
 
     let mut actions: Vec<CodeActionOrCommand> = Vec::new();
@@ -68,51 +65,48 @@ fn handle_non_range(lsp: &mut LspServer, uri: &URI, range: &Range) -> Result<Cod
                 &document.references,
                 slice,
             );
+
+            let new_file_uri = Uri::from_str(&format!(
+                "file:///Users/douglasrocha/dev/rust_markdown_lsp/{}.md",
+                (std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_secs()
+                    % 1000000) as u32
+            ))
+            .into_diagnostic()
+            .context("New document should be valid path")?;
+
             if let Some(header_content) = header_content {
                 let document_changes = DocumentChanges::Operations(vec![
-                    TextDocumentEdit {
-                        text_document: OptionalVersionedTextDocumentIdentifier::new(
-                            uri.clone(),
-                            None,
-                        ),
-                        edits: vec![TextEdit {
-                            range: document.span_to_range(&range),
-                            new_text: "".to_string(),
-                        }],
-                    }
-                    .into(),
-                    ResourceOp::Create(CreateFile {
-                        uri: URI(format!(
-                            "/Users/douglasrocha/dev/rust_markdown_lsp/{}.md",
-                            content.to_string()
-                        )),
+                    DocumentChangeOperation::Edit(TextDocumentEdit {
+                        text_document: OptionalVersionedTextDocumentIdentifier {
+                            uri: uri.clone(),
+                            version: None,
+                        },
+                        edits: vec![OneOf::Left(TextEdit::new(
+                            document.span_to_range(&range),
+                            "".to_string(),
+                        ))],
+                    }),
+                    DocumentChangeOperation::Op(ResourceOp::Create(CreateFile {
+                        uri: new_file_uri.clone(),
                         options: None,
                         annotation_id: None,
-                    })
-                    .into(),
-                    TextDocumentEdit {
-                        text_document: OptionalVersionedTextDocumentIdentifier::new(
-                            URI(format!(
-                                "/Users/douglasrocha/dev/rust_markdown_lsp/{}.md",
-                                content.to_string()
-                            )),
-                            None,
-                        ),
-                        edits: vec![TextEdit {
-                            range: Range {
-                                start: Position {
-                                    line: 0,
-                                    character: 0,
-                                },
-                                end: Position {
-                                    line: 0,
-                                    character: 0,
-                                },
-                            },
-                            new_text: header_content.to_string(),
-                        }],
-                    }
-                    .into(),
+                    })),
+                    DocumentChangeOperation::Edit(TextDocumentEdit {
+                        text_document: OptionalVersionedTextDocumentIdentifier {
+                            uri: new_file_uri,
+                            version: None,
+                        },
+                        edits: vec![OneOf::Left(TextEdit::new(
+                            Range::new(
+                                Position::new(0, 0),
+                                Position::new(slice.lines().count() as u32, 0),
+                            ),
+                            header_content.to_string(),
+                        ))],
+                    }),
                 ]);
 
                 let workspace_edit = WorkspaceEdit {
@@ -124,7 +118,7 @@ fn handle_non_range(lsp: &mut LspServer, uri: &URI, range: &Range) -> Result<Cod
                 actions.push(
                     CodeAction {
                         title: "Extract header & section".to_string(),
-                        kind: Some(CodeActionKind::RefactorExtract),
+                        kind: Some(CodeActionKind::REFACTOR_EXTRACT),
                         edit: Some(workspace_edit),
                         command: Some(Command {
                             title: "Save new file".to_string(),
@@ -134,13 +128,14 @@ fn handle_non_range(lsp: &mut LspServer, uri: &URI, range: &Range) -> Result<Cod
                                 content.to_string()
                             ))]),
                         }),
+                        ..Default::default()
                     }
                     .into(),
                 );
             }
         }
-        _ => todo!("Handle other cases for code actions"),
+        _ => return Err(miette!("Other cases not handled yet.")),
     }
 
-    Ok(Some(actions))
+    Ok(actions)
 }

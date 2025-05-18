@@ -1,56 +1,10 @@
 use log::info;
-use lsp_types::{code_action::CodeActionKind, uri::URI};
-use serde::{Deserialize, Serialize};
+use lsp_types::{
+    CodeActionKind, CodeActionOptions, HoverProviderCapability, InitializeParams, InitializeResult,
+    OneOf, ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+};
 
 use crate::message::{Request, Response};
-
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct InitializeParams {
-    pub process_id: Option<usize>,
-    pub client_info: Option<ClientInfo>,
-    pub workspace_folders: Option<Vec<WorkspaceFolder>>,
-}
-
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct WorkspaceFolder {
-    /// The associated URI for this workspace folder.
-    pub uri: URI,
-    /// The name of the workspace folder. Used to refer to this
-    /// workspace folder in the user interface.
-    pub name: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct ClientInfo {
-    pub name: String,
-    pub version: Option<String>,
-}
-
-pub type ServerInfo = ClientInfo;
-
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct InitializeResult {
-    capabilities: ServerCapabilities,
-    server_info: Option<ServerInfo>,
-}
-
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct ServerCapabilities {
-    text_document_sync: Option<usize>,
-    hover_provider: bool,
-    definition_provider: bool,
-    code_action_provider: CodeActionProvider,
-}
-
-#[derive(Serialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct CodeActionProvider {
-    pub code_action_kinds: Option<Vec<CodeActionKind>>,
-}
 
 pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
     let test: serde_json::Value = serde_json::from_value(request.params.clone()).unwrap();
@@ -61,12 +15,16 @@ pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
 
     let initialize_result = InitializeResult {
         capabilities: ServerCapabilities {
-            text_document_sync: Some(1),
-            hover_provider: true,
-            definition_provider: true,
-            code_action_provider: CodeActionProvider {
-                code_action_kinds: Some(vec![CodeActionKind::RefactorExtract]),
-            },
+            text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
+            hover_provider: Some(HoverProviderCapability::Simple(true)),
+            definition_provider: Some(OneOf::Left(true)),
+            code_action_provider: Some(lsp_types::CodeActionProviderCapability::Options(
+                CodeActionOptions {
+                    code_action_kinds: Some(vec![CodeActionKind::REFACTOR_EXTRACT]),
+                    ..Default::default()
+                },
+            )),
+            ..Default::default()
         },
         server_info: Some(ServerInfo {
             name: "doug-learn-lsp".to_string(),
@@ -75,5 +33,10 @@ pub fn process_initialize(request: Request) -> (Response, InitializeParams) {
     };
     let result = serde_json::to_value(initialize_result).unwrap();
 
-    (Response::new(request.id, Some(result)), initialize_params)
+    log::debug!("{}:", result);
+
+    (
+        Response::from_ok(request.id, Some(result)),
+        initialize_params,
+    )
 }
