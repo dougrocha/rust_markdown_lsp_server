@@ -8,24 +8,27 @@ pub use chumsky::Parser;
 pub mod markdown;
 pub mod yaml;
 
+#[derive(Debug, Clone, PartialEq)]
+pub struct Spanned<T>(pub T, pub SimpleSpan);
+
 pub type ParseError<'a> = extra::Err<Rich<'a, char>>;
 
-pub type MarkdownText<'a> = Vec<Spanned<InlineMarkdown<'a>>>;
+pub type MarkdownText<'a> = Vec<Spanned<InlineMarkdownNode<'a>>>;
 
 #[derive(Debug, Clone)]
 pub struct ParsedMarkdown<'a> {
     pub frontmatter: Option<Frontmatter<'a>>,
-    pub body: Vec<Spanned<Markdown<'a>>>,
+    pub body: Vec<Spanned<MarkdownNode<'a>>>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LinkHeader<'a> {
+pub struct HeaderRef<'a> {
     pub level: usize,
-    pub content: &'a str,
+    pub slug: &'a str,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum Markdown<'a> {
+pub enum MarkdownNode<'a> {
     Header {
         level: usize,
         content: &'a str,
@@ -39,29 +42,27 @@ pub enum Markdown<'a> {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum InlineMarkdown<'a> {
-    PlainText(&'a str),
-    Link {
-        title: &'a str,
+pub enum LinkType<'a> {
+    InlineLink {
+        text: &'a str,
         uri: &'a str,
-        header: Option<LinkHeader<'a>>,
-    },
-    Image {
-        alt_text: &'a str,
-        uri: &'a str,
+        header: Option<HeaderRef<'a>>,
     },
     WikiLink {
         target: &'a str,
-        alias: Option<&'a str>,
-        header: Option<LinkHeader<'a>>,
+        display_text: Option<&'a str>,
+        header: Option<HeaderRef<'a>>,
     },
-    Footnote(&'a str),
-    Tag(&'a str),
-    Invalid,
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Spanned<T>(pub T, pub SimpleSpan);
+pub enum InlineMarkdownNode<'a> {
+    PlainText(&'a str),
+    Link(LinkType<'a>),
+    Tag(&'a str),
+    Footnote(&'a str),
+    Invalid,
+}
 
 pub fn markdown_parser<'a>() -> impl Parser<'a, &'a str, ParsedMarkdown<'a>, ParseError<'a>> {
     frontmatter_parser()
@@ -75,7 +76,7 @@ pub fn markdown_parser<'a>() -> impl Parser<'a, &'a str, ParsedMarkdown<'a>, Par
             .recover_with(skip_until(
                 any().ignored(),
                 text::newline().ignored(),
-                || Markdown::Invalid,
+                || MarkdownNode::Invalid,
             ))
             .map_with(|block, e| Spanned(block, e.span()))
             .then_ignore(choice((text::whitespace(), text::newline())))

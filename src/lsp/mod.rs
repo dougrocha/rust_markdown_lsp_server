@@ -5,6 +5,7 @@ pub mod did_open;
 pub mod goto_definition;
 pub mod hover;
 pub mod initialize;
-pub mod server;
+pub mod state;
 
+pub mod completion;
 mod helpers;

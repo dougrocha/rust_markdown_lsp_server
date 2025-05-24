@@ -1,120 +1,128 @@
-pub mod references;
+use std::ops::Range;
 
-use lsp_types::{Position, Range, Uri};
-use parser::{markdown_parser, InlineMarkdown, Markdown, Parser, Spanned};
-use references::{LinkData, LinkHeader, Reference};
+use lsp_types::{Diagnostic, Position, Uri};
+use miette::Result;
+use parser::{markdown_parser, InlineMarkdownNode, LinkType, MarkdownNode, Parser, Spanned};
+use references::{Reference, ReferenceKind, TargetHeader};
 use ropey::Rope;
-use std::str::FromStr;
+
+pub mod references;
 
 #[derive(Debug)]
 pub struct Document {
     pub uri: Uri,
+    pub version: i32,
     pub content: Rope,
     pub references: Vec<Reference>,
+    pub diagnostics: Vec<Diagnostic>,
 }
 
 impl Document {
-    pub fn new(uri: Uri, content: &str) -> Self {
+    pub fn new(uri: Uri, content: &str, version: i32) -> Result<Self> {
         let mut s = Self {
             uri,
+            version,
             content: Rope::from_str(content),
             references: Vec::new(),
+            diagnostics: Vec::new(),
         };
-        s.parse_content();
+        s.parse_and_analyze()?;
 
-        s
+        Ok(s)
     }
 
-    pub fn update(&mut self, new_content: &str) {
-        self.content = Rope::from_str(new_content);
-        self.parse_content();
+    pub fn update(&mut self, content: &str, version: i32) -> Result<()> {
+        self.content = Rope::from_str(content);
+        self.version = version;
+        self.parse_and_analyze()?;
+        Ok(())
     }
 
-    pub fn find_reference_at_position(&self, position: Position) -> Option<&Reference> {
-        let Position { line, character } = position;
-        let text = self.content.slice(..);
-
-        let line_str = text.line(line as usize);
-        let character_byte_pos = line_str
-            .chars()
-            .take(character as usize)
-            .map(|c| c.len_utf8())
-            .sum::<usize>();
-
-        let line_byte_idx = text.line_to_byte(line as usize);
-        let cursor_byte_pos = line_byte_idx + character_byte_pos;
-
-        self.references.iter().find(|reference| match reference {
-            Reference::Link(data) | Reference::WikiLink(data) => {
-                data.span.contains(&cursor_byte_pos)
-            }
-            Reference::Header { span, .. } => span.contains(&cursor_byte_pos),
-            _ => false,
-        })
+    pub fn get_reference_at_position(&self, position: Position) -> Option<&Reference> {
+        self.references
+            .iter()
+            .find(|reference| reference.contains_position(position))
     }
 
-    fn parse_content(&mut self) {
-        let input = self.content.slice(..).to_string();
-        let (_frontmatter, body) =
-            if let Some(parsed_markdown) = markdown_parser().parse(&input).into_output() {
-                (parsed_markdown.frontmatter, parsed_markdown.body)
-            } else {
-                return;
-            };
-
+    fn parse_and_analyze(&mut self) -> Result<()> {
         self.references.clear();
+        self.diagnostics.clear();
 
-        body.into_iter().for_each(|spanned| {
-            let Spanned(markdown, span) = spanned;
-            match markdown {
-                Markdown::FootnoteDefinition { .. } => {}
-                Markdown::Header { level, content } => {
-                    let reference = Reference::Header {
-                        level,
-                        content: content.to_string(),
-                        span: span.into_range(),
-                    };
-                    self.references.push(reference);
-                }
-                Markdown::Paragraph(inlines) => {
-                    for inline in inlines {
-                        let Spanned(inline_markdown, inline_span) = inline;
+        let input = self.content.slice(..).to_string();
 
-                        match inline_markdown {
-                            InlineMarkdown::Link { title, uri, header } => {
-                                let reference = create_link_reference(
-                                    &self.uri,
-                                    inline_span.into_range(),
-                                    uri,
-                                    Some(title),
-                                    header,
-                                );
-                                self.references.push(reference);
+        let (parsed_markdown, errors) = markdown_parser().parse(&input).into_output_errors();
+        for err in errors {
+            // TODO: Add to diagnostics
+        }
+
+        if let Some(parsed_markdown) = parsed_markdown {
+            let body = parsed_markdown.body;
+            body.into_iter().for_each(|spanned| {
+                let Spanned(markdown, span) = spanned;
+                match markdown {
+                    MarkdownNode::Header { level, content } => {
+                        let reference = Reference {
+                            kind: ReferenceKind::Header {
+                                level,
+                                content: content.to_string(),
+                            },
+                            range: self.byte_to_lsp_range(&span.into_range()),
+                        };
+                        self.references.push(reference);
+                    }
+                    MarkdownNode::Paragraph(inlines) => {
+                        for inline in inlines {
+                            let Spanned(inline_markdown, inline_span) = inline;
+
+                            match inline_markdown {
+                                InlineMarkdownNode::Link(link) => match link {
+                                    LinkType::InlineLink { text, uri, header } => {
+                                        let reference = Reference {
+                                            kind: ReferenceKind::Link {
+                                                target: uri.to_string(),
+                                                alt_text: text.to_string(),
+                                                title: None,
+                                                header: header.map(|x| TargetHeader {
+                                                    level: x.level,
+                                                    content: x.slug.to_string(),
+                                                }),
+                                            },
+                                            range: self.byte_to_lsp_range(&span.into_range()),
+                                        };
+                                        self.references.push(reference);
+                                    }
+                                    LinkType::WikiLink {
+                                        target,
+                                        display_text,
+                                        header,
+                                    } => {
+                                        let reference = Reference {
+                                            kind: ReferenceKind::WikiLink {
+                                                target: target.to_string(),
+                                                alias: display_text.map(|d| d.to_string()),
+                                                header: header.map(|x| TargetHeader {
+                                                    level: x.level,
+                                                    content: x.slug.to_string(),
+                                                }),
+                                            },
+                                            range: self.byte_to_lsp_range(&span.into_range()),
+                                        };
+                                        self.references.push(reference);
+                                    }
+                                },
+                                _ => {}
                             }
-                            InlineMarkdown::WikiLink {
-                                target,
-                                alias,
-                                header,
-                            } => {
-                                let reference = create_link_reference(
-                                    &self.uri,
-                                    inline_span.into_range(),
-                                    target,
-                                    alias,
-                                    header,
-                                );
-                                self.references.push(reference);
-                            }
-                            _ => {}
                         }
                     }
+                    _ => {}
                 }
-                Markdown::Invalid => {}
-            }
-        });
+            });
+        }
+
+        Ok(())
     }
 
-    pub fn span_to_range(&self, span: &std::ops::Range<usize>) -> Range {
+    pub fn byte_to_lsp_range(&self, span: &Range<usize>) -> lsp_types::Range {
         let start_line = self.content.byte_to_line(span.start);
         let end_line = self.content.byte_to_line(span.end);
 
@@ -124,29 +132,18 @@ impl Document {
         let start_char = self.content.byte_to_char(span.start) - line_start_char_idx;
         let end_char = self.content.byte_to_char(span.end) - line_end_char_idx;
 
-        Range {
-            start: Position::new(start_line as u32, start_char as u32),
-            end: Position::new(end_line as u32, end_char as u32),
-        }
+        lsp_types::Range::new(
+            Position::new(start_line as u32, start_char as u32),
+            Position::new(end_line as u32, end_char as u32),
+        )
     }
-}
 
-// Helper function to create a link reference
-fn create_link_reference(
-    source: &Uri,
-    inline_span: std::ops::Range<usize>,
-    target: &str,
-    title: Option<&str>,
-    header: Option<parser::LinkHeader>,
-) -> Reference {
-    Reference::Link(LinkData {
-        source: source.clone(),
-        span: inline_span,
-        target: Uri::from_str(target).unwrap_or(Uri::from_str("").unwrap()),
-        title: title.map(|t| t.to_string()),
-        header: header.map(|parser::LinkHeader { level, content }| LinkHeader {
-            level,
-            content: content.to_string(),
-        }),
-    })
+    pub fn lsp_range_to_byte(&self, range: &lsp_types::Range) -> Range<usize> {
+        let start_byte =
+            self.content.line_to_byte(range.start.line as usize) + range.start.character as usize;
+        let end_byte =
+            self.content.line_to_byte(range.end.line as usize) + range.end.character as usize;
+
+        start_byte..end_byte
+    }
 }

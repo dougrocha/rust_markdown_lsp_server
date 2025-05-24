@@ -1,51 +1,51 @@
-use miette::{bail, Result};
+use lsp_types::{Position, Range as LspRange};
 
-use std::{ops::Range, path::Path, str::FromStr};
+#[derive(Debug, Clone, PartialEq)]
+pub struct Reference {
+    pub kind: ReferenceKind,
+    pub range: LspRange,
+}
 
-use lsp_types::Uri;
+impl Reference {
+    pub fn contains_position(&self, position: Position) -> bool {
+        if position.line < self.range.start.line || position.line > self.range.end.line {
+            return false;
+        }
 
-#[derive(Debug)]
-pub enum Reference {
-    // Header of a file
+        if position.line == self.range.start.line && position.character < self.range.start.character
+        {
+            return false;
+        }
+
+        if position.line == self.range.end.line && position.character >= self.range.end.character {
+            return false;
+        }
+
+        true
+    }
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ReferenceKind {
     Header {
         level: usize,
         content: String,
-        span: Range<usize>,
     },
-    // Tag ID
-    Tag(Uri),
-    Link(LinkData),
-    WikiLink(LinkData),
-    Footnote,
-}
-
-// Find a way to distinguish between multiple types of links
-// Internal, External, to other hearders, maybe ids?
-#[derive(Debug, Clone, PartialEq)]
-pub struct LinkData {
-    pub source: Uri,
-    pub target: Uri,
-    pub span: Range<usize>,
-    pub title: Option<String>,
-    pub header: Option<LinkHeader>,
+    Link {
+        target: String,
+        alt_text: String,
+        title: Option<String>,
+        header: Option<TargetHeader>,
+    },
+    WikiLink {
+        target: String,
+        alias: Option<String>,
+        header: Option<TargetHeader>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct LinkHeader {
+pub struct TargetHeader {
     pub level: usize,
     pub content: String,
-}
-
-pub fn combine_uri_and_relative_path(source: &Uri, target: &Uri) -> Result<Uri> {
-    let source_dir = Path::new(source.path().as_str())
-        .parent()
-        .expect("Source directory cannot be None");
-
-    let target_path = target.as_str();
-
-    let combined_path = source_dir.join(target_path);
-
-    let path = combined_path.canonicalize();
-
-    Ok(Uri::from_str(path.unwrap().as_os_str().to_str().unwrap()).unwrap())
 }

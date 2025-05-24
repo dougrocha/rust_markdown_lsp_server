@@ -1,8 +1,8 @@
 use chumsky::prelude::*;
 
-use crate::{InlineMarkdown, LinkHeader, Markdown, ParseError, Spanned};
+use crate::{HeaderRef, InlineMarkdownNode, LinkType, MarkdownNode, ParseError, Spanned};
 
-pub fn header_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, ParseError<'a>> {
+pub fn header_parser<'a>() -> impl Parser<'a, &'a str, MarkdownNode<'a>, ParseError<'a>> {
     let hashes = just('#')
         .repeated()
         .at_least(1)
@@ -11,23 +11,23 @@ pub fn header_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, ParseError<
         .labelled("hashes");
 
     let line_text = any()
-        .filter(|x: &char| *x != '\n')
+        .filter(|c: &char| *c != '\n' && *c != '\r')
         .repeated()
         .to_slice()
+        .map(|s: &'a str| s.trim_end().trim_end_matches('#').trim())
         .labelled("header text");
 
     hashes
-        .padded()
+        .then_ignore(text::inline_whitespace())
         .then(line_text)
-        .then_ignore(text::newline())
-        .map(|(hashes, text)| Markdown::Header {
+        .map(|(hashes, text_slice)| MarkdownNode::Header {
             level: hashes,
-            content: text,
+            content: text_slice,
         })
         .labelled("Header Parser")
 }
 
-pub fn tag_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
+pub fn tag_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
     just('#')
         .ignore_then(
             any()
@@ -36,11 +36,11 @@ pub fn tag_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseErr
                 .at_least(1)
                 .to_slice(),
         )
-        .map(InlineMarkdown::Tag)
+        .map(InlineMarkdownNode::Tag)
         .labelled("Tag Parser")
 }
 
-pub fn footnote_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
+pub fn footnote_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
     just("[^")
         .ignore_then(
             any()
@@ -50,11 +50,12 @@ pub fn footnote_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, Par
                 .to_slice(),
         )
         .then_ignore(just("]"))
-        .map(InlineMarkdown::Footnote)
+        .map(InlineMarkdownNode::Footnote)
         .labelled("Footnote Parser")
 }
 
-pub fn footnote_definition_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, ParseError<'a>> {
+pub fn footnote_definition_parser<'a>() -> impl Parser<'a, &'a str, MarkdownNode<'a>, ParseError<'a>>
+{
     let id = just("[^")
         .ignore_then(
             any()
@@ -75,11 +76,11 @@ pub fn footnote_definition_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>
 
     id.then(inline_text)
         .then_ignore(text::newline().or(end()))
-        .map(|(id, content)| Markdown::FootnoteDefinition { id, content })
+        .map(|(id, content)| MarkdownNode::FootnoteDefinition { id, content })
         .labelled("Footnote Definition Parser")
 }
 
-pub fn wikilink_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
+pub fn wikilink_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
     let alias = any()
         .filter(|c: &char| *c != ']' && *c != '\n')
         .repeated()
@@ -113,7 +114,10 @@ pub fn wikilink_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, Par
 
     let header = header_level
         .then(header_content)
-        .map(|(level, content)| LinkHeader { level, content });
+        .map(|(level, content)| HeaderRef {
+            level,
+            slug: content,
+        });
 
     let possible_alias = choice((
         just('|').ignore_then(alias).then_ignore(just("]]")),
@@ -132,15 +136,17 @@ pub fn wikilink_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, Par
     just("[[")
         .ignore_then(target)
         .map_err(|e: Rich<char>| Rich::custom(*e.span(), "WikiLink format is invalid."))
-        .map(|((target, header), alias)| InlineMarkdown::WikiLink {
-            target,
-            alias,
-            header,
+        .map(|((target, header), display_text)| {
+            InlineMarkdownNode::Link(LinkType::WikiLink {
+                target,
+                display_text,
+                header,
+            })
         })
         .labelled("WikiLink")
 }
 
-pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
+pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
     let title = any()
         .filter(|c: &char| *c != ']' && *c != '\n')
         .repeated()
@@ -175,7 +181,10 @@ pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseEr
 
     let header = header_level
         .then(header_content)
-        .map(|(level, content)| LinkHeader { level, content });
+        .map(|(level, content)| HeaderRef {
+            level,
+            slug: content,
+        });
 
     let uri = any()
         .filter(|c: &char| !['#', ')', '\n'].contains(c))
@@ -194,11 +203,13 @@ pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseEr
         .then(uri)
         .map_err(|e: Rich<char>| Rich::custom(*e.span(), "2. Link format is invalid."))
         .then_ignore(just(')'))
-        .map(|(title, (uri, header))| InlineMarkdown::Link { title, uri, header })
+        .map(|(text, (uri, header))| {
+            InlineMarkdownNode::Link(LinkType::InlineLink { text, uri, header })
+        })
         .labelled("Link Parser")
 }
 
-pub fn image_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
+pub fn image_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
     let alt_text = any()
         .filter(|c: &char| *c != ']' && *c != '\n')
         .repeated()
@@ -219,11 +230,17 @@ pub fn image_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseE
         .ignore_then(alt_text)
         .then_ignore(just(']'))
         .then(just('(').ignore_then(uri).then_ignore(just(')')))
-        .map(|(alt_text, uri)| InlineMarkdown::Image { alt_text, uri })
+        .map(|(alt_text, uri)| {
+            InlineMarkdownNode::Link(LinkType::InlineLink {
+                text: alt_text,
+                uri,
+                header: None,
+            })
+        })
         .labelled("Image Parser")
 }
 
-pub fn plain_text_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
+pub fn plain_text_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
     let stop_condition = choice((
         just("#"),
         just("["),
@@ -239,11 +256,11 @@ pub fn plain_text_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, P
         .repeated()
         .at_least(1)
         .to_slice()
-        .map(InlineMarkdown::PlainText)
+        .map(InlineMarkdownNode::PlainText)
         .labelled("Plain Text")
 }
 
-pub fn inline_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, ParseError<'a>> {
+pub fn inline_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
     choice((
         tag_parser(),
         image_parser(),
@@ -255,11 +272,11 @@ pub fn inline_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdown<'a>, Parse
     .labelled("Inline Parser")
 }
 
-pub fn paragraph_parser<'a>() -> impl Parser<'a, &'a str, Markdown<'a>, ParseError<'a>> {
+pub fn paragraph_parser<'a>() -> impl Parser<'a, &'a str, MarkdownNode<'a>, ParseError<'a>> {
     inline_parser()
         .map_with(|inline_block, e| Spanned(inline_block, e.span()))
         .repeated()
         .at_least(1)
         .collect()
-        .map(Markdown::Paragraph)
+        .map(MarkdownNode::Paragraph)
 }

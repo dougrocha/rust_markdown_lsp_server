@@ -1,21 +1,20 @@
-use std::str::FromStr;
-
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse, Command,
     CreateFile, DocumentChangeOperation, DocumentChanges, OneOf,
     OptionalVersionedTextDocumentIdentifier, Position, Range, ResourceOp, TextDocumentEdit,
     TextEdit, Uri, WorkspaceEdit,
 };
-use miette::{miette, Context, IntoDiagnostic, Result};
+use miette::{miette, Context, Result};
 
 use crate::{
-    document::references::{LinkHeader, Reference},
-    lsp::{helpers::extract_header_section, server::LspServer},
+    document::references::{ReferenceKind, TargetHeader},
+    lsp::{helpers::extract_header_section, state::LspState},
     path::get_parent_path,
+    UriExt,
 };
 
 pub fn process_code_action(
-    lsp: &mut LspServer,
+    lsp: &mut LspState,
     params: CodeActionParams,
 ) -> Result<Option<CodeActionResponse>> {
     let uri = params.text_document.uri;
@@ -32,24 +31,25 @@ pub fn process_code_action(
 }
 
 fn handle_non_range(
-    lsp: &mut LspServer,
+    lsp: &mut LspState,
     uri: &Uri,
     range: &Range,
 ) -> Result<Option<CodeActionResponse>> {
     let document = lsp
+        .documents
         .get_document(uri)
         .context("Document should exist somewhere")?;
     let slice = document.content.slice(..);
 
-    let Some(reference) = document.find_reference_at_position(range.start) else {
+    let Some(reference) = document.get_reference_at_position(range.start) else {
         return Ok(Some(vec![]));
     };
 
     let mut actions: Vec<CodeActionOrCommand> = Vec::new();
-    match reference {
-        Reference::Header { level, content, .. } => {
+    match &reference.kind {
+        ReferenceKind::Header { level, content, .. } => {
             let (header_content, range) = extract_header_section(
-                &LinkHeader {
+                &TargetHeader {
                     level: *level,
                     content: content.to_string(),
                 },
@@ -58,8 +58,8 @@ fn handle_non_range(
             );
 
             let parent = get_parent_path(uri).unwrap();
-            let new_file_uri = Uri::from_str(&format!(
-                "file://{}/{}.md",
+            let new_file_uri = Uri::from_file_path(&format!(
+                "{}/{}.md",
                 parent,
                 (std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -67,7 +67,6 @@ fn handle_non_range(
                     .as_secs()
                     % 1000000) as u32
             ))
-            .into_diagnostic()
             .context("New document should be valid path")?;
 
             if let Some(header_content) = header_content {
@@ -96,7 +95,7 @@ fn handle_non_range(
                             version: None,
                         },
                         edits: vec![OneOf::Left(TextEdit::new(
-                            document.span_to_range(&range),
+                            range,
                             // TODO: Change this from empty to link to new file and link
                             "".to_string(),
                         ))],

@@ -1,9 +1,10 @@
 use lsp_types::{TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
+use miette::Result;
 use serde::Deserialize;
 
 use crate::message::Notification;
 
-use super::server::LspServer;
+use super::state::LspState;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -12,7 +13,7 @@ pub struct DidChangeTextDocumentParams {
     content_changes: Vec<TextDocumentContentChangeEvent>,
 }
 
-pub fn process_did_change(lsp: &mut LspServer, notification: Notification) {
+pub fn process_did_change(lsp: &mut LspState, notification: Notification) -> Result<()> {
     let params: DidChangeTextDocumentParams = serde_json::from_value(notification.params).unwrap();
 
     let uri = params.text_document.uri;
@@ -24,9 +25,11 @@ pub fn process_did_change(lsp: &mut LspServer, notification: Notification) {
             range_length,
         } = change;
         if range.is_none() && range_length.is_none() {
-            lsp.update_document(&uri, &text);
+            lsp.documents.update_document(&uri, &text)?;
         } else {
             todo!("Incremental Changes Not Supported!");
         }
     }
+
+    Ok(())
 }
