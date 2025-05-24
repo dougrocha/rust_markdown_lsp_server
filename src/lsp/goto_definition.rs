@@ -1,54 +1,70 @@
+use std::str::FromStr;
+
 use crate::{
     document::{
-        references::{combine_uri_and_relative_path, LinkData, Reference},
+        references::{ReferenceKind, TargetHeader},
         Document,
     },
-    lsp::server::LspServer,
+    lsp::state::LspState,
+    path::combine_and_normalize,
 };
-use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location};
-use miette::Result;
+use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range, Uri};
+use miette::{Context, Result};
 
 pub fn process_goto_definition(
-    lsp: &mut LspServer,
+    lsp: &mut LspState,
     params: GotoDefinitionParams,
 ) -> Result<Option<GotoDefinitionResponse>> {
     let uri = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
     let document = lsp
+        .documents
         .get_document(&uri)
         .ok_or_else(|| miette::miette!("Document not found"))?;
 
-    let reference = document.find_reference_at_position(position);
+    let reference = document.get_reference_at_position(position);
 
-    if let Some(Reference::Link(link) | Reference::WikiLink(link)) = &reference {
-        let (document, span) = find_definition(lsp, &link)?;
-        let range = document.span_to_range(span);
+    if let Some(reference) = reference {
+        match &reference.kind {
+            ReferenceKind::Link { target, header, .. }
+            | ReferenceKind::WikiLink { target, header, .. } => {
+                let (document, range) =
+                    find_definition(lsp, document, &target, header.as_ref().cloned())?;
 
-        Ok(Some(GotoDefinitionResponse::from(Location {
-            uri: document.uri.clone(),
-            range,
-        })))
+                Ok(Some(GotoDefinitionResponse::from(Location {
+                    uri: document.uri.clone(),
+                    range,
+                })))
+            }
+            _ => Ok(None),
+        }
     } else {
         Err(miette::miette!("Definition not found"))
     }
 }
 
 fn find_definition<'a>(
-    lsp: &'a LspServer,
-    link_data: &'a LinkData,
-) -> Result<(&'a Document, &'a std::ops::Range<usize>)> {
-    let file_path = combine_uri_and_relative_path(&link_data.source, &link_data.target)?;
+    lsp: &'a LspState,
+    document: &Document,
+    target: &str,
+    header: Option<TargetHeader>,
+) -> Result<(&'a Document, Range)> {
+    let file_path = combine_and_normalize(&document.uri, &Uri::from_str(target).unwrap())?;
 
     let document = lsp
+        .documents
         .get_document(&file_path)
-        .ok_or_else(|| miette::miette!("Document not found"))?;
+        .context(format!("Document '{:?}' not found in workspace", file_path))?;
 
     for reference in &document.references {
-        if let Reference::Header { content, span, .. } = reference {
-            if link_data.header.is_none() || content == &link_data.header.clone().unwrap().content {
-                return Ok((document, span));
+        match &reference.kind {
+            ReferenceKind::Header { content, .. } => {
+                if header.is_none() || header.clone().unwrap().content == *content {
+                    return Ok((document, reference.range));
+                }
             }
+            _ => {}
         }
     }
 

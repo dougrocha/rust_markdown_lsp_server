@@ -15,29 +15,64 @@ use rust_markdown_lsp::{
         goto_definition::process_goto_definition,
         hover::process_hover,
         initialize::process_initialize,
-        server::LspServer,
+        state::LspState,
     },
     message::{Message, Request, Response},
     rpc::{encode_message, handle_message, write_msg},
+    UriExt,
 };
 use simplelog::*;
 use std::{
     fs::File,
     io::{self, Write},
     str::FromStr,
+    sync::{Arc, Mutex},
 };
 
-fn main() -> Result<(), Box<dyn std::error::Error>> {
+fn main() -> Result<()> {
     let _ = WriteLogger::init(
         LevelFilter::max(),
         Config::default(),
         File::create("log.txt").expect("Failed to create log file"),
     );
 
-    // let output = std::fs::read_to_string("test.md").unwrap();
-    // let (output, errors) = markdown_parser().parse(&output).into_output_errors();
-    // println!("Parsed frontmatter: {:#?}", output.unwrap().frontmatter);
+    // let test_file = std::fs::read_to_string("test.md").unwrap();
+    // let (output, errors) = markdown_parser().parse(&test_file).into_output_errors();
+    // println!(
+    //     "Parsed frontmatter: {:#?}",
+    //     output.clone().unwrap().frontmatter
+    // );
     // println!("Parsed errors: {:#?}", errors);
+    //
+    // let document = Document::new(Uri::from_str("./test.md").unwrap(), &test_file, 0)?;
+    // for el in output.unwrap().body {
+    //     match el.0 {
+    //         parser::MarkdownNode::Header { level, content: _ } => {
+    //             println!(
+    //                 "Header: \t{:?}\n \tSpan: {:?}\n \t{:?}\n",
+    //                 level,
+    //                 el.1,
+    //                 document.byte_to_lsp_range(&el.1.into_range())
+    //             );
+    //         }
+    //         parser::MarkdownNode::Paragraph(spanneds) => {
+    //             for Spanned(inel, span) in spanneds {
+    //                 match inel {
+    //                     parser::InlineMarkdownNode::Link(link_type) => {
+    //                         println!(
+    //                             "Link: \t{:?}\n \tSpan: {:?}\n \t{:?}\n",
+    //                             link_type,
+    //                             span,
+    //                             document.byte_to_lsp_range(&span.into_range())
+    //                         );
+    //                     }
+    //                     _ => {}
+    //                 }
+    //             }
+    //         }
+    //         _ => {}
+    //     }
+    // }
     //
     // return Ok(());
 
@@ -47,10 +82,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let mut reader = stdin.lock();
     let mut writer = stdout.lock();
 
-    let mut lsp = LspServer::new();
+    let lsp = Arc::new(Mutex::new(LspState::default()));
 
     let init_params = handle_initialize(&mut reader, &mut writer)?;
 
+    let mut lsp = lsp.lock().unwrap();
     load_workspaces(&mut lsp, init_params)?;
 
     loop {
@@ -66,11 +102,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                             request::HoverRequest => process_hover,
                             request::GotoDefinition => process_goto_definition,
                             request::CodeActionRequest => process_code_action,
+                            request::Completion => process_completion,
+                            request::ResolveCompletionItem => process_completion_resolve,
                         });
                     }
                 },
                 Message::Notification(notification) => {
-                    handle_notification(&mut lsp, notification);
+                    handle_notification(&mut lsp, notification)?;
                 }
             },
             Err(e) => {
@@ -82,36 +120,33 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-fn load_workspaces(lsp: &mut LspServer, init_params: InitializeParams) -> Result<()> {
+fn load_workspaces(lsp: &mut LspState, init_params: InitializeParams) -> Result<()> {
     let Some(folders) = init_params.workspace_folders else {
-        return Ok(());
+        return Err(miette!("Workspaces were not provided."));
     };
 
-    let folder = folders
-        .first()
-        .context("No workspace folders provided by the client")?;
-    let uri = &folder.uri;
-    lsp.set_root(uri.clone());
+    for folder in folders {
+        let uri = &folder.uri;
+        lsp.set_root(uri.clone());
 
-    let path = uri.path();
-    let markdown_files = walkdir::WalkDir::new(path.as_str())
-        .into_iter()
-        .filter_map(|entry| entry.ok())
-        .filter(|entry| entry.path().extension().map_or(false, |ext| ext == "md"));
+        let path = uri.path();
+        let markdown_files = walkdir::WalkDir::new(path.as_str())
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "md"));
 
-    for entry in markdown_files {
-        let path_str = entry.path().to_string_lossy().to_string();
-        let contents = std::fs::read_to_string(&entry.path())
-            .into_diagnostic()
-            .with_context(|| format!("Failed to read markdown file: {}", path_str))?;
+        for entry in markdown_files {
+            let entry_path = entry.path();
+            let contents = std::fs::read_to_string(entry_path)
+                .into_diagnostic()
+                .with_context(|| format!("Failed to read markdown file: {:?}", entry_path))?;
 
-        let uri = Uri::from_str(&path_str)
-            .into_diagnostic()
-            .with_context(|| format!("Invalid URI from path: {}", path_str))?;
+            let uri = Uri::from_file_path(entry_path)
+                .with_context(|| format!("Failed to create URI from path: {:?}", entry_path))?;
 
-        lsp.open_document(uri, &contents);
+            lsp.documents.open_document(uri, 0, &contents)?;
+        }
     }
-
     Ok(())
 }
 
@@ -136,7 +171,7 @@ fn handle_initialize<R: io::BufRead, W: Write>(
 }
 
 fn handle_request<R, W, F>(
-    lsp: &mut LspServer,
+    lsp: &mut LspState,
     raw_request: Request,
     writer: &mut W,
     handler: F,
@@ -144,7 +179,7 @@ fn handle_request<R, W, F>(
 where
     R: LspRequest,
     W: Write,
-    F: FnOnce(&mut LspServer, R::Params) -> Result<R::Result>,
+    F: FnOnce(&mut LspState, R::Params) -> Result<R::Result>,
 {
     let params: R::Params = serde_json::from_value(raw_request.params)
         .into_diagnostic()
@@ -159,32 +194,33 @@ where
 
     let msg = encode_message(&response)?;
 
-    log::debug!("{:#?}", msg);
     write_msg(writer, &msg)?;
     Ok(())
 }
 
 fn handle_notification(
-    lsp: &mut LspServer,
+    lsp: &mut LspState,
     notification: rust_markdown_lsp::message::Notification,
-) {
+) -> Result<()> {
     debug!("textDocument/{}", notification.method);
     match notification.method.as_str() {
         "initialized" => {
             info!("Initialized");
         }
         "textDocument/didOpen" => {
-            process_did_open(lsp, notification);
+            process_did_open(lsp, notification)?;
         }
         "textDocument/didSave" => {
             serde_json::to_string_pretty(&notification).unwrap();
         }
         "textDocument/didChange" => {
-            process_did_change(lsp, notification);
+            process_did_change(lsp, notification)?;
         }
         "textDocument/didClose" => {}
         _ => {
             warn!("Unimplemented Notification: {}", notification.method);
         }
     };
+
+    Ok(())
 }
