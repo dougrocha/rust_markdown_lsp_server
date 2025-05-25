@@ -8,10 +8,10 @@ pub fn process_hover(lsp: &mut LspState, params: HoverParams) -> Result<Option<H
     let uri = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
-    let document = lsp
-        .documents
-        .get_document(&uri)
-        .context("Document should exist somewhere")?;
+    let document = lsp.documents.get_document(&uri).context(format!(
+        "Document '{:?}' not found in workspace",
+        uri.as_str()
+    ))?;
 
     let reference = document.get_reference_at_position(position);
 

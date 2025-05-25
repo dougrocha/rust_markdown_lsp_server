@@ -1,8 +1,10 @@
 use log::info;
 use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions,
+    DiagnosticOptions, DiagnosticRegistrationOptions, DiagnosticServerCapabilities,
     HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ServerCapabilities,
-    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions,
+    ServerInfo, TextDocumentRegistrationOptions, TextDocumentSyncCapability, TextDocumentSyncKind,
+    WorkDoneProgressOptions,
 };
 use miette::{IntoDiagnostic, Result};
 
@@ -23,11 +25,21 @@ pub fn process_initialize(request: Request) -> Result<(Response, InitializeParam
                 code_action_kinds: Some(vec![CodeActionKind::REFACTOR_EXTRACT]),
                 ..Default::default()
             })),
+            diagnostic_provider: Some(DiagnosticServerCapabilities::RegistrationOptions(
+                DiagnosticRegistrationOptions {
+                    diagnostic_options: DiagnosticOptions {
+                        inter_file_dependencies: true,
+                        workspace_diagnostics: true,
+                        ..Default::default()
+                    },
+                    ..Default::default()
+                },
+            )),
             completion_provider: Some(CompletionOptions {
                 resolve_provider: Some(true),
                 trigger_characters: Some(vec![
                     "#".to_string(),
-                    "[".to_string(),
+                    "[[".to_string(),
                     ":".to_string(),
                     "(".to_string(),
                 ]),

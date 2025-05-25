@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use lsp_types::{Diagnostic, Position, Uri};
+use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Uri};
 use miette::Result;
 use parser::{markdown_parser, InlineMarkdownNode, LinkType, MarkdownNode, Parser, Spanned};
 use references::{Reference, ReferenceKind, TargetHeader};
@@ -53,6 +53,17 @@ impl Document {
         let (parsed_markdown, errors) = markdown_parser().parse(&input).into_output_errors();
         for err in errors {
             // TODO: Add to diagnostics
+            self.diagnostics.push(Diagnostic {
+                range: self.byte_to_lsp_range(&err.span().into_range()),
+                severity: Some(DiagnosticSeverity::WARNING),
+                code: None,
+                code_description: None,
+                source: Some("parser".to_string()),
+                message: err.reason().to_string(),
+                related_information: None,
+                tags: None,
+                data: None,
+            });
         }
 
         if let Some(parsed_markdown) = parsed_markdown {
@@ -87,7 +98,8 @@ impl Document {
                                                     content: x.slug.to_string(),
                                                 }),
                                             },
-                                            range: self.byte_to_lsp_range(&span.into_range()),
+                                            range: self
+                                                .byte_to_lsp_range(&inline_span.into_range()),
                                         };
                                         self.references.push(reference);
                                     }
@@ -105,7 +117,8 @@ impl Document {
                                                     content: x.slug.to_string(),
                                                 }),
                                             },
-                                            range: self.byte_to_lsp_range(&span.into_range()),
+                                            range: self
+                                                .byte_to_lsp_range(&inline_span.into_range()),
                                         };
                                         self.references.push(reference);
                                     }
