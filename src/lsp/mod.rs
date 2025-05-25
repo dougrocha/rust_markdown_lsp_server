@@ -8,4 +8,6 @@ pub mod initialize;
 pub mod state;
 
 pub mod completion;
+pub mod diagnostics;
 mod helpers;
+

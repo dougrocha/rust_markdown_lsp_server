@@ -18,10 +18,10 @@ pub fn process_goto_definition(
     let uri = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
-    let document = lsp
-        .documents
-        .get_document(&uri)
-        .ok_or_else(|| miette::miette!("Document not found"))?;
+    let document = lsp.documents.get_document(&uri).context(format!(
+        "Document '{:?}' not found in workspace",
+        uri.as_str()
+    ))?;
 
     let reference = document.get_reference_at_position(position);
 
@@ -52,10 +52,10 @@ fn find_definition<'a>(
 ) -> Result<(&'a Document, Range)> {
     let file_path = combine_and_normalize(&document.uri, &Uri::from_str(target).unwrap())?;
 
-    let document = lsp
-        .documents
-        .get_document(&file_path)
-        .context(format!("Document '{:?}' not found in workspace", file_path))?;
+    let document = lsp.documents.get_document(&file_path).context(format!(
+        "Document '{:?}' not found in workspace",
+        file_path.as_str()
+    ))?;
 
     for reference in &document.references {
         match &reference.kind {

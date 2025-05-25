@@ -35,10 +35,10 @@ fn handle_non_range(
     uri: &Uri,
     range: &Range,
 ) -> Result<Option<CodeActionResponse>> {
-    let document = lsp
-        .documents
-        .get_document(uri)
-        .context("Document should exist somewhere")?;
+    let document = lsp.documents.get_document(&uri).context(format!(
+        "Document '{:?}' not found in workspace",
+        uri.as_str()
+    ))?;
     let slice = document.content.slice(..);
 
     let Some(reference) = document.get_reference_at_position(range.start) else {

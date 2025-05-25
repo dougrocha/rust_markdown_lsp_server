@@ -1,3 +1,10 @@
+use std::{
+    fs::File,
+    io::{self, Write},
+    str::FromStr,
+    sync::{Arc, Mutex},
+};
+
 use log::{debug, error, info, warn};
 use lsp_types::{
     error_codes,
@@ -5,11 +12,13 @@ use lsp_types::{
     InitializeParams, Uri,
 };
 use miette::{miette, Context, IntoDiagnostic, Result};
+use parser::Parser;
 use rust_markdown_lsp::{
     dispatch_lsp_request,
     lsp::{
         code_action::process_code_action,
         completion::{process_completion, process_completion_resolve},
+        diagnostics::process_diagnostic,
         did_change::process_did_change,
         did_open::process_did_open,
         goto_definition::process_goto_definition,
@@ -22,12 +31,6 @@ use rust_markdown_lsp::{
     UriExt,
 };
 use simplelog::*;
-use std::{
-    fs::File,
-    io::{self, Write},
-    str::FromStr,
-    sync::{Arc, Mutex},
-};
 
 fn main() -> Result<()> {
     let _ = WriteLogger::init(
@@ -37,14 +40,27 @@ fn main() -> Result<()> {
     );
 
     // let test_file = std::fs::read_to_string("test.md").unwrap();
-    // let (output, errors) = markdown_parser().parse(&test_file).into_output_errors();
+    // let (output, errors) = parser::markdown_parser()
+    //     .parse(&test_file)
+    //     .into_output_errors();
     // println!(
     //     "Parsed frontmatter: {:#?}",
     //     output.clone().unwrap().frontmatter
     // );
-    // println!("Parsed errors: {:#?}", errors);
+    // let document = rust_markdown_lsp::document::Document::new(
+    //     Uri::from_str("./test.md").unwrap(),
+    //     &test_file,
+    //     0,
+    // )?;
+    // for err in errors {
+    //     println!(
+    //         "{:#?} - {:?}",
+    //         err,
+    //         document.byte_to_lsp_range(&err.span().into_range())
+    //     );
+    // }
     //
-    // let document = Document::new(Uri::from_str("./test.md").unwrap(), &test_file, 0)?;
+
     // for el in output.unwrap().body {
     //     match el.0 {
     //         parser::MarkdownNode::Header { level, content: _ } => {
@@ -104,6 +120,7 @@ fn main() -> Result<()> {
                             request::CodeActionRequest => process_code_action,
                             request::Completion => process_completion,
                             request::ResolveCompletionItem => process_completion_resolve,
+                            request::DocumentDiagnosticRequest => process_diagnostic,
                         });
                     }
                 },
