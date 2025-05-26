@@ -16,11 +16,11 @@ pub fn process_diagnostic(
         uri.as_str()
     ))?;
 
-    Ok(DocumentDiagnosticReportResult::from(
-        DocumentDiagnosticReport::from(RelatedFullDocumentDiagnosticReport {
+    Ok(DocumentDiagnosticReportResult::Report(
+        DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {
             related_documents: None,
             full_document_diagnostic_report: FullDocumentDiagnosticReport {
-                result_id: None,
+                result_id: Some("markdown-lsp".to_owned()),
                 items: document.diagnostics.clone(),
             },
         }),

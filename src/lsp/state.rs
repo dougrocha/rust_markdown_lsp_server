@@ -1,8 +1,8 @@
-use lsp_types::Uri;
-use miette::Result;
+use lsp_types::{ClientCapabilities, InitializeParams, Uri, WorkspaceFolder};
+use miette::{miette, Context, IntoDiagnostic, Result};
 use std::collections::HashMap;
 
-use crate::document::Document;
+use crate::{document::Document, UriExt};
 
 #[derive(Default)]
 pub struct DocumentStore {
@@ -42,6 +42,7 @@ impl DocumentStore {
 pub struct LspState {
     pub documents: DocumentStore,
     root: Option<Uri>,
+    client_capabilities: Option<ClientCapabilities>,
 }
 
 impl LspState {
@@ -51,5 +52,43 @@ impl LspState {
 
     pub fn set_root(&mut self, uri: Uri) {
         self.root = Some(uri);
+    }
+
+    pub fn set_client_capabilities(&mut self, capabilities: ClientCapabilities) {
+        self.client_capabilities = Some(capabilities);
+    }
+
+    pub fn load_workspaces(
+        self: &mut Self,
+        workspace_folders: Option<Vec<WorkspaceFolder>>,
+    ) -> Result<()> {
+        let Some(folders) = workspace_folders else {
+            return Err(miette!("Workspaces were not provided."));
+        };
+
+        for folder in folders {
+            let uri = &folder.uri;
+            // TODO: What happens when multiple workspaces are shown and I override the root
+            self.set_root(uri.clone());
+
+            let path = uri.path();
+            let markdown_files = walkdir::WalkDir::new(path.as_str())
+                .into_iter()
+                .filter_map(|entry| entry.ok())
+                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "md"));
+
+            for entry in markdown_files {
+                let entry_path = entry.path();
+                let contents = std::fs::read_to_string(entry_path)
+                    .into_diagnostic()
+                    .with_context(|| format!("Failed to read markdown file: {:?}", entry_path))?;
+
+                let uri = Uri::from_file_path(entry_path)
+                    .with_context(|| format!("Failed to create URI from path: {:?}", entry_path))?;
+
+                self.documents.open_document(uri, 0, &contents)?;
+            }
+        }
+        Ok(())
     }
 }
