@@ -1,18 +1,17 @@
 use std::{
     fs::File,
-    io::{self, Write},
-    str::FromStr,
-    sync::{Arc, Mutex},
+    io::{self, BufRead, Write},
 };
 
-use log::{debug, error, info, warn};
+use log::{debug, info, warn};
 use lsp_types::{
     error_codes,
     request::{self, Request as LspRequest},
-    InitializeParams, Uri,
+    InitializeParams,
 };
 use miette::{miette, Context, IntoDiagnostic, Result};
-use parser::Parser;
+use simplelog::*;
+
 use rust_markdown_lsp::{
     dispatch_lsp_request,
     lsp::{
@@ -28,9 +27,7 @@ use rust_markdown_lsp::{
     },
     message::{Message, Request, Response},
     rpc::{encode_message, handle_message, write_msg},
-    UriExt,
 };
-use simplelog::*;
 
 fn main() -> Result<()> {
     let _ = WriteLogger::init(
@@ -92,85 +89,60 @@ fn main() -> Result<()> {
     //
     // return Ok(());
 
-    let stdin = io::stdin();
-    let stdout = io::stdout();
+    let (stdin, stdout) = (io::stdin(), io::stdout());
+    let (mut reader, mut writer) = (stdin.lock(), stdout.lock());
 
-    let mut reader = stdin.lock();
-    let mut writer = stdout.lock();
-
-    let lsp = Arc::new(Mutex::new(LspState::default()));
+    let mut lsp = LspState::default();
 
     let init_params = handle_initialize(&mut reader, &mut writer)?;
 
-    let mut lsp = lsp.lock().unwrap();
-    load_workspaces(&mut lsp, init_params)?;
+    lsp.load_workspaces(init_params.workspace_folders)?;
+    lsp.set_client_capabilities(init_params.capabilities);
 
     loop {
-        match handle_message(&mut reader) {
-            Ok(message) => match message {
-                Message::Request(request) => match request.method.as_str() {
-                    "shutdown" => {
-                        log::info!("Shutting down");
-                        break;
-                    }
-                    _ => {
-                        dispatch_lsp_request!(&mut lsp, request, &mut writer, {
-                            request::HoverRequest => process_hover,
-                            request::GotoDefinition => process_goto_definition,
-                            request::CodeActionRequest => process_code_action,
-                            request::Completion => process_completion,
-                            request::ResolveCompletionItem => process_completion_resolve,
-                            request::DocumentDiagnosticRequest => process_diagnostic,
-                        });
-                    }
-                },
-                Message::Notification(notification) => {
-                    handle_notification(&mut lsp, notification)?;
-                }
-            },
-            Err(e) => {
-                error!("Error handling message: {}", e);
+        let message = handle_message(&mut reader)?;
+        if let Err(_) = process_message(&mut lsp, message, &mut writer) {
+            break;
+        }
+    }
+
+    Ok(())
+}
+
+fn process_message<W>(lsp: &mut LspState, message: Message, writer: &mut W) -> Result<()>
+where
+    W: Write + Unpin,
+{
+    match message {
+        Message::Request(request) => match request.method.as_str() {
+            "shutdown" => {
+                log::info!("Shutting down");
+                return Err(miette!("placeholder error for shutting down"));
             }
+            _ => {
+                dispatch_lsp_request!(lsp, request, writer, {
+                    request::HoverRequest => process_hover,
+                    request::GotoDefinition => process_goto_definition,
+                    request::CodeActionRequest => process_code_action,
+                    request::Completion => process_completion,
+                    request::ResolveCompletionItem => process_completion_resolve,
+                    request::DocumentDiagnosticRequest => process_diagnostic,
+                });
+            }
+        },
+        Message::Notification(notification) => {
+            handle_notification(lsp, notification)?;
         }
     }
 
     Ok(())
 }
 
-fn load_workspaces(lsp: &mut LspState, init_params: InitializeParams) -> Result<()> {
-    let Some(folders) = init_params.workspace_folders else {
-        return Err(miette!("Workspaces were not provided."));
-    };
-
-    for folder in folders {
-        let uri = &folder.uri;
-        lsp.set_root(uri.clone());
-
-        let path = uri.path();
-        let markdown_files = walkdir::WalkDir::new(path.as_str())
-            .into_iter()
-            .filter_map(|entry| entry.ok())
-            .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "md"));
-
-        for entry in markdown_files {
-            let entry_path = entry.path();
-            let contents = std::fs::read_to_string(entry_path)
-                .into_diagnostic()
-                .with_context(|| format!("Failed to read markdown file: {:?}", entry_path))?;
-
-            let uri = Uri::from_file_path(entry_path)
-                .with_context(|| format!("Failed to create URI from path: {:?}", entry_path))?;
-
-            lsp.documents.open_document(uri, 0, &contents)?;
-        }
-    }
-    Ok(())
-}
-
-fn handle_initialize<R: io::BufRead, W: Write>(
-    reader: &mut R,
-    writer: &mut W,
-) -> Result<InitializeParams> {
+fn handle_initialize<R, W>(reader: &mut R, writer: &mut W) -> Result<InitializeParams>
+where
+    R: BufRead,
+    W: Write,
+{
     let message = handle_message(reader)?;
 
     if let Message::Request(request) = message {

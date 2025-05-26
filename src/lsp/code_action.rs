@@ -51,7 +51,7 @@ fn handle_non_range(
             let (header_content, range) = extract_header_section(
                 &TargetHeader {
                     level: *level,
-                    content: content.to_string(),
+                    content: content.to_owned(),
                 },
                 &document.references,
                 slice,
@@ -97,7 +97,7 @@ fn handle_non_range(
                         edits: vec![OneOf::Left(TextEdit::new(
                             range,
                             // TODO: Change this from empty to link to new file and link
-                            "".to_string(),
+                            "".to_owned(),
                         ))],
                     }),
                 ]);
@@ -110,12 +110,12 @@ fn handle_non_range(
 
                 actions.push(
                     CodeAction {
-                        title: "Extract header & section".to_string(),
+                        title: "Extract header & section".to_owned(),
                         kind: Some(CodeActionKind::REFACTOR_EXTRACT),
                         edit: Some(workspace_edit),
                         command: Some(Command {
-                            title: "Save new file".to_string(),
-                            command: "rustMarkdown.saveFile".to_string(),
+                            title: "Save new file".to_owned(),
+                            command: "rustMarkdown.saveFile".to_owned(),
                             arguments: Some(vec![serde_json::json!(format!(
                                 "/Users/douglasrocha/dev/rust_markdown_lsp/{}.md",
                                 content.to_string()
