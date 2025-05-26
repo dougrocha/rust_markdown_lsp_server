@@ -6,13 +6,6 @@ edition = "2021"
 [dependencies]
 ariadne = { workspace = true }
 chumsky = { workspace = true }
-log = { workspace = true }
-serde = { workspace = true }
-serde_json = { workspace = true }
-serde_yaml = { workspace = true }
-simplelog = { workspace = true }
-str_indices = { workspace = true }
-walkdir = { workspace = true }
 
 [dev-dependencies]
 divan = "0.1.17"
