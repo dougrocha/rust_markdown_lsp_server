@@ -4,10 +4,10 @@ use lsp_types::{
 };
 use miette::{Context, Result};
 
-use super::state::LspState;
+use super::server::Server;
 
 pub fn process_diagnostic(
-    lsp: &mut LspState,
+    lsp: &mut Server,
     params: DocumentDiagnosticParams,
 ) -> Result<DocumentDiagnosticReportResult> {
     let uri = params.text_document.uri;

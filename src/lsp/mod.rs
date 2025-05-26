@@ -5,9 +5,8 @@ pub mod did_open;
 pub mod goto_definition;
 pub mod hover;
 pub mod initialize;
-pub mod state;
+pub mod server;
 
 pub mod completion;
 pub mod diagnostics;
 mod helpers;
-

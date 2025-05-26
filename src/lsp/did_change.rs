@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::message::Notification;
 
-use super::state::LspState;
+use super::server::Server;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -13,7 +13,7 @@ pub struct DidChangeTextDocumentParams {
     content_changes: Vec<TextDocumentContentChangeEvent>,
 }
 
-pub fn process_did_change(lsp: &mut LspState, notification: Notification) -> Result<()> {
+pub fn process_did_change(lsp: &mut Server, notification: Notification) -> Result<()> {
     let params: DidChangeTextDocumentParams = serde_json::from_value(notification.params).unwrap();
 
     let uri = params.text_document.uri;

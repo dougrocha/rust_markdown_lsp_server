@@ -1,10 +1,10 @@
 use lsp_types::{CompletionItem, CompletionItemKind, CompletionParams, CompletionResponse};
 use miette::Result;
 
-use super::state::LspState;
+use super::server::Server;
 
 pub fn process_completion(
-    lsp: &mut LspState,
+    lsp: &mut Server,
     params: CompletionParams,
 ) -> Result<Option<CompletionResponse>> {
     log::debug!("Completion params: {:?}", params);
@@ -31,7 +31,7 @@ pub fn process_completion(
 }
 
 pub fn process_completion_resolve(
-    lsp: &mut LspState,
+    lsp: &mut Server,
     item: CompletionItem,
 ) -> Result<CompletionItem> {
     log::debug!("Completion Resolve {:?}", item);

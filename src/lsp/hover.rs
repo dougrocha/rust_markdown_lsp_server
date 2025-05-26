@@ -1,10 +1,10 @@
-use crate::{document::references::ReferenceKind, lsp::state::LspState};
+use crate::{document::references::ReferenceKind, lsp::server::Server};
 use lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind};
 use miette::{Context, Result};
 
 use super::helpers;
 
-pub fn process_hover(lsp: &mut LspState, params: HoverParams) -> Result<Option<Hover>> {
+pub fn process_hover(lsp: &mut Server, params: HoverParams) -> Result<Option<Hover>> {
     let uri = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 

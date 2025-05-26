@@ -1,4 +1,4 @@
-use lsp_types::{ClientCapabilities, InitializeParams, Uri, WorkspaceFolder};
+use lsp_types::{ClientCapabilities, Uri, WorkspaceFolder};
 use miette::{miette, Context, IntoDiagnostic, Result};
 use std::collections::HashMap;
 
@@ -39,13 +39,13 @@ impl DocumentStore {
 }
 
 #[derive(Default)]
-pub struct LspState {
+pub struct Server {
     pub documents: DocumentStore,
     root: Option<Uri>,
     client_capabilities: Option<ClientCapabilities>,
 }
 
-impl LspState {
+impl Server {
     pub fn new() -> Self {
         Self::default()
     }
