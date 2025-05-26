@@ -8,13 +8,13 @@ use miette::{miette, Context, Result};
 
 use crate::{
     document::references::{ReferenceKind, TargetHeader},
-    lsp::{helpers::extract_header_section, state::LspState},
+    lsp::{helpers::extract_header_section, server::Server},
     path::get_parent_path,
     UriExt,
 };
 
 pub fn process_code_action(
-    lsp: &mut LspState,
+    lsp: &mut Server,
     params: CodeActionParams,
 ) -> Result<Option<CodeActionResponse>> {
     let uri = params.text_document.uri;
@@ -31,7 +31,7 @@ pub fn process_code_action(
 }
 
 fn handle_non_range(
-    lsp: &mut LspState,
+    lsp: &mut Server,
     uri: &Uri,
     range: &Range,
 ) -> Result<Option<CodeActionResponse>> {

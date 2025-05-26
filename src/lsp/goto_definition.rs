@@ -5,14 +5,14 @@ use crate::{
         references::{ReferenceKind, TargetHeader},
         Document,
     },
-    lsp::state::LspState,
+    lsp::server::Server,
     path::combine_and_normalize,
 };
 use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range, Uri};
 use miette::{Context, Result};
 
 pub fn process_goto_definition(
-    lsp: &mut LspState,
+    lsp: &mut Server,
     params: GotoDefinitionParams,
 ) -> Result<Option<GotoDefinitionResponse>> {
     let uri = params.text_document_position_params.text_document.uri;
@@ -45,7 +45,7 @@ pub fn process_goto_definition(
 }
 
 fn find_definition<'a>(
-    lsp: &'a LspState,
+    lsp: &'a Server,
     document: &Document,
     target: &str,
     header: Option<TargetHeader>,

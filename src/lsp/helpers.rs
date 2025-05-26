@@ -9,14 +9,14 @@ use crate::{
         references::{ReferenceKind, TargetHeader},
         Document,
     },
-    lsp::state::LspState,
+    lsp::server::Server,
     path::combine_and_normalize,
     Reference, TextBufferConversions,
 };
 
 /// Retrieves the content from a linked document based on the provided link data.
 pub fn get_content(
-    lsp: &LspState,
+    lsp: &Server,
     document: &Document,
     target: &str,
     header: Option<TargetHeader>,

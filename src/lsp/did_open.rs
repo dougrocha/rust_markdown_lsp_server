@@ -4,7 +4,7 @@ use serde::Deserialize;
 
 use crate::message::Notification;
 
-use super::state::LspState;
+use super::server::Server;
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]
@@ -12,7 +12,7 @@ pub struct DidOpenTextDocumentParams {
     text_document: TextDocumentItem,
 }
 
-pub fn process_did_open(lsp: &mut LspState, notification: Notification) -> Result<()> {
+pub fn process_did_open(lsp: &mut Server, notification: Notification) -> Result<()> {
     let did_open_params: DidOpenTextDocumentParams =
         serde_json::from_value(notification.params).unwrap();
 
