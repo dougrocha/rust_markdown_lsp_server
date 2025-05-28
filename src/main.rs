@@ -23,6 +23,7 @@ use rust_markdown_lsp::{
         goto_definition::process_goto_definition,
         hover::process_hover,
         initialize::process_initialize,
+        references::process_references,
         server::Server,
     },
     message::{Message, Request, Response},
@@ -113,6 +114,7 @@ fn main() -> Result<()> {
                         request::CodeActionRequest => process_code_action,
                         request::Completion => process_completion,
                         request::ResolveCompletionItem => process_completion_resolve,
+                        request::References => process_references,
                         request::DocumentDiagnosticRequest => process_diagnostic,
                     });
                 }

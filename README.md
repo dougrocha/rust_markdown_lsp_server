@@ -19,7 +19,7 @@ Currently, this server supports:
 ## Implemented Features
 
 - [ ] Proper document syncing (consider trying incremental sync)
-- [-] `textDocument/codeAction`
+- [x] `textDocument/codeAction`
   - Shows a preview of linked documents on hover
   - [x] Wiki-links
   - [ ] Regular links

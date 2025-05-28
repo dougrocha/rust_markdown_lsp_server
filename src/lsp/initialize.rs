@@ -3,8 +3,7 @@ use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions,
     DiagnosticOptions, DiagnosticRegistrationOptions, DiagnosticServerCapabilities,
     HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ServerCapabilities,
-    ServerInfo, TextDocumentRegistrationOptions, TextDocumentSyncCapability, TextDocumentSyncKind,
-    WorkDoneProgressOptions,
+    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions,
 };
 use miette::{IntoDiagnostic, Result};
 
@@ -35,19 +34,16 @@ pub fn process_initialize(request: Request) -> Result<(Response, InitializeParam
                     ..Default::default()
                 },
             )),
+            references_provider: Some(OneOf::Left(true)),
             completion_provider: Some(CompletionOptions {
                 resolve_provider: Some(true),
                 trigger_characters: Some(vec![
                     "#".to_string(),
-                    "[[".to_string(),
+                    "[".to_string(),
                     ":".to_string(),
                     "(".to_string(),
                 ]),
-                all_commit_characters: None,
-                work_done_progress_options: WorkDoneProgressOptions {
-                    work_done_progress: None,
-                },
-                completion_item: None,
+                ..Default::default()
             }),
             ..Default::default()
         },

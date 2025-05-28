@@ -10,3 +10,4 @@ pub mod server;
 pub mod completion;
 pub mod diagnostics;
 mod helpers;
+pub mod references;
