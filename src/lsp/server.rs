@@ -36,6 +36,10 @@ impl DocumentStore {
     pub fn get_document_mut(&mut self, uri: &Uri) -> Option<&mut Document> {
         self.documents.get_mut(uri)
     }
+
+    pub fn get_documents(&self) -> impl Iterator<Item = &Document> {
+        self.documents.values()
+    }
 }
 
 #[derive(Default)]

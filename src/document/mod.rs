@@ -8,7 +8,7 @@ use ropey::Rope;
 
 pub mod references;
 
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub struct Document {
     pub uri: Uri,
     pub version: i32,
