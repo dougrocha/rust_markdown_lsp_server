@@ -5,8 +5,8 @@ use crate::{
         references::{ReferenceKind, TargetHeader},
         Document,
     },
-    lsp::server::Server,
     get_document,
+    lsp::{helpers::normalize_header_content, server::Server},
     path::combine_and_normalize,
 };
 use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range, Uri};
@@ -53,13 +53,28 @@ fn find_definition<'a>(
     let document = get_document!(lsp, &file_path);
 
     for reference in &document.references {
-        match &reference.kind {
-            ReferenceKind::Header { content, .. } => {
-                if header.is_none() || header.clone().unwrap().content == *content {
-                    return Ok((document, reference.range));
-                }
+        if let ReferenceKind::Header { content, .. } = &reference.kind {
+            if header.is_none() {
+                return Ok((document, reference.range));
             }
-            _ => {}
+
+            let target_header = header.clone().unwrap();
+            let target_content = target_header
+                .content
+                .strip_prefix('#')
+                .unwrap_or(&target_header.content);
+
+            // Try multiple matching strategies:
+            // 1. Exact match
+            // 2. Normalized target vs original content
+            // 3. Normalized target vs normalized content
+            let matches = *content == target_content
+                || normalize_header_content(content) == target_content
+                || normalize_header_content(content) == normalize_header_content(target_content);
+
+            if matches {
+                return Ok((document, reference.range));
+            }
         }
     }
 
