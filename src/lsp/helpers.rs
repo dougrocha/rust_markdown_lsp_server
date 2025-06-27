@@ -14,6 +14,18 @@ use crate::{
     Reference, TextBufferConversions,
 };
 
+/// Normalizes header content to match the format used in completions
+pub fn normalize_header_content(content: &str) -> String {
+    content
+        .to_lowercase()
+        .chars()
+        .map(|c| if c.is_alphanumeric() { c } else { '-' })
+        .collect::<String>()
+        .replace("--", "-")
+        .trim_matches('-')
+        .to_string()
+}
+
 /// Retrieves the content from a linked document based on the provided link data.
 pub fn get_content(
     lsp: &Server,
@@ -55,7 +67,12 @@ pub fn extract_header_section<'a>(
 
     for link in links {
         if let ReferenceKind::Header { level, content } = &link.kind {
-            if start_position.is_none() && *content == header.content && *level == header.level {
+            // Check both original content and normalized content for matching
+            let matches_header = *content == header.content
+                || normalize_header_content(content) == header.content
+                || normalize_header_content(content) == normalize_header_content(&header.content);
+
+            if start_position.is_none() && matches_header {
                 start_position = Some(link.range.start);
                 continue;
             } else if start_position.is_some() && *level <= header.level {

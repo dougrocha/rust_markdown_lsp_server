@@ -23,6 +23,7 @@ pub struct ParsedMarkdown<'a> {
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct HeaderRef<'a> {
+    /// TODO: Remove this eventually
     pub level: usize,
     pub slug: &'a str,
 }
