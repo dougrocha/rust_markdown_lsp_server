@@ -88,8 +88,8 @@ impl Document {
                     for inline in inlines {
                         let Spanned(inline_markdown, inline_span) = inline;
 
-                        match inline_markdown {
-                            InlineMarkdownNode::Link(link) => match link {
+                        if let InlineMarkdownNode::Link(link) = inline_markdown {
+                            match link {
                                 LinkType::InlineLink { text, uri, header } => {
                                     let reference = Reference {
                                         kind: ReferenceKind::Link {
@@ -123,8 +123,7 @@ impl Document {
                                     };
                                     self.references.push(reference);
                                 }
-                            },
-                            _ => {}
+                            }
                         }
                     }
                 }

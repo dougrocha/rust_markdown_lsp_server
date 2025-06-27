@@ -8,6 +8,7 @@ use miette::{miette, Context, Result};
 
 use crate::{
     document::references::{ReferenceKind, TargetHeader},
+    get_document,
     lsp::{helpers::extract_header_section, server::Server},
     path::get_parent_path,
     UriExt,
@@ -35,10 +36,7 @@ fn handle_non_range(
     uri: &Uri,
     range: &Range,
 ) -> Result<Option<CodeActionResponse>> {
-    let document = lsp.documents.get_document(&uri).context(format!(
-        "Document '{:?}' not found in workspace",
-        uri.as_str()
-    ))?;
+    let document = get_document!(lsp, uri);
     let slice = document.content.slice(..);
 
     let Some(reference) = document.get_reference_at_position(range.start) else {
@@ -58,7 +56,7 @@ fn handle_non_range(
             );
 
             let parent = get_parent_path(uri).unwrap();
-            let new_file_uri = Uri::from_file_path(&format!(
+            let new_file_uri = Uri::from_file_path(format!(
                 "{}/{}.md",
                 parent,
                 (std::time::SystemTime::now()

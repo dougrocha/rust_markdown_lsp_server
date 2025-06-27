@@ -63,7 +63,7 @@ impl Server {
     }
 
     pub fn load_workspaces(
-        self: &mut Self,
+        &mut self,
         workspace_folders: Option<Vec<WorkspaceFolder>>,
     ) -> Result<()> {
         let Some(folders) = workspace_folders else {
@@ -85,10 +85,10 @@ impl Server {
                 let entry_path = entry.path();
                 let contents = std::fs::read_to_string(entry_path)
                     .into_diagnostic()
-                    .with_context(|| format!("Failed to read markdown file: {:?}", entry_path))?;
+                    .with_context(|| format!("Failed to read markdown file: {entry_path:?}"))?;
 
                 let uri = Uri::from_file_path(entry_path)
-                    .with_context(|| format!("Failed to create URI from path: {:?}", entry_path))?;
+                    .with_context(|| format!("Failed to create URI from path: {entry_path:?}"))?;
 
                 self.documents.open_document(uri, 0, &contents)?;
             }

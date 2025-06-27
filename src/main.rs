@@ -136,7 +136,7 @@ where
     let message = handle_message(reader)?;
 
     let Message::Request(request) = message else {
-        Err(miette!("First message was not a request"))
+        return Err(miette!("First message was not a request"));
     };
 
     if request.method == "initialize" {
@@ -146,7 +146,7 @@ where
         return Ok(params);
     }
 
-    return Err(miette!("First request must be 'initialize'"));
+    Err(miette!("First request must be 'initialize'"))
 }
 
 fn handle_request<R, W, F>(

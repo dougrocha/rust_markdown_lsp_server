@@ -49,7 +49,7 @@ pub fn find_relative_path(source: &Uri, target: &Uri) -> Result<String> {
         )
     })?;
 
-    let relative_path_buf = pathdiff::diff_paths(&target_path, &base_dir).ok_or_else(|| {
+    let relative_path_buf = pathdiff::diff_paths(&target_path, base_dir).ok_or_else(|| {
         miette::miette!(
             "Could not determine relative path from '{}' to '{}'",
             base_dir.display(),
@@ -65,7 +65,7 @@ pub fn find_relative_path(source: &Uri, target: &Uri) -> Result<String> {
         // This heuristic adds "./" for direct children like "file.txt" or "subdir/file.txt"
         // It avoids adding "./" for "../" paths or absolute paths if they somehow sneaked through
         // (though diff_paths should produce relative paths).
-        Ok(format!("./{}", relative_path_str))
+        Ok(format!("./{relative_path_str}"))
     } else {
         Ok(relative_path_str)
     }

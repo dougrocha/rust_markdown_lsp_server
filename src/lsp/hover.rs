@@ -1,4 +1,4 @@
-use crate::{document::references::ReferenceKind, lsp::server::Server};
+use crate::{document::references::ReferenceKind, get_document, lsp::server::Server};
 use lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind};
 use miette::{Context, Result};
 
@@ -8,10 +8,7 @@ pub fn process_hover(lsp: &mut Server, params: HoverParams) -> Result<Option<Hov
     let uri = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
-    let document = lsp.documents.get_document(&uri).context(format!(
-        "Document '{:?}' not found in workspace",
-        uri.as_str()
-    ))?;
+    let document = get_document!(lsp, &uri);
 
     let reference = document.get_reference_at_position(position);
 

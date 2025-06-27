@@ -15,3 +15,23 @@ macro_rules! dispatch_lsp_request {
         }
     };
 }
+
+#[macro_export]
+macro_rules! get_document {
+    ($lsp:expr, $uri:expr) => {
+        $lsp.documents.get_document($uri).context(format!(
+            "Document '{:?}' not found in workspace",
+            $uri.as_str()
+        ))?
+    };
+}
+
+#[macro_export]
+macro_rules! get_document_mut {
+    ($lsp:expr, $uri:expr) => {
+        $lsp.documents.get_document_mut($uri).context(format!(
+            "Document '{:?}' not found in workspace",
+            $uri.as_str()
+        ))?
+    };
+}
