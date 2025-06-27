@@ -3,7 +3,7 @@ use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions,
     DiagnosticOptions, DiagnosticRegistrationOptions, DiagnosticServerCapabilities,
     HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ServerCapabilities,
-    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind, WorkDoneProgressOptions,
+    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 use miette::{IntoDiagnostic, Result};
 
@@ -54,7 +54,7 @@ pub fn process_initialize(request: Request) -> Result<(Response, InitializeParam
     };
     let result = serde_json::to_value(initialize_result).unwrap();
 
-    log::trace!("InitializeResult: {:?}", result);
+    log::trace!("InitializeResult: {result:?}");
 
     Ok((
         Response::from_ok(request.id, Some(result)),

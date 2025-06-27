@@ -8,6 +8,7 @@ use miette::{Context, Result};
 
 use crate::{
     document::{references::ReferenceKind, Document},
+    get_document,
     lsp::helpers::normalize_header_content,
     path::{combine_and_normalize, find_relative_path},
     TextBufferConversions,
@@ -22,16 +23,13 @@ pub fn process_completion(
     let uri = params.text_document_position.text_document.uri;
     let position = params.text_document_position.position;
 
-    let document = lsp.documents.get_document(&uri).context(format!(
-        "Document '{:?}' not found in workspace",
-        uri.as_str()
-    ))?;
+    let document = get_document!(lsp, &uri);
 
     // TODO: Make all outputs for paths and headers be normalized without spaces and symbols
     if let Some(context) = params.context {
         let completions = match context.trigger_kind {
             CompletionTriggerKind::INVOKED => {
-                log::debug!("Handling invoked completion: {:?}", position);
+                log::debug!("Handling invoked completion: {position:?}");
                 handle_invoked_completion(lsp, document, position)
             }
             CompletionTriggerKind::TRIGGER_CHARACTER => {
@@ -100,7 +98,7 @@ fn handle_trigger_completion(
 
                 // Create completion with proper text edit
                 let text_edit = if is_wiki_link {
-                    format!("{}]]", insert_path)
+                    format!("{insert_path}]]")
                 } else {
                     format!(
                         "{}{}",
@@ -180,21 +178,20 @@ fn handle_trigger_completion(
                     let insert_text = if has_closing {
                         header_id.clone()
                     } else if is_wiki_link {
-                        format!("{}]]", header_id)
+                        format!("{header_id}]]")
                     } else {
-                        format!("{})", header_id)
+                        format!("{header_id})")
                     };
 
                     completions.push(CompletionItem {
                         label,
                         label_details: Some(CompletionItemLabelDetails {
                             detail: None,
-                            description: Some(format!("H{}", level)),
+                            description: Some(format!("H{level}")),
                         }),
                         kind: Some(CompletionItemKind::REFERENCE),
                         documentation: Some(Documentation::String(format!(
-                            "# {}\n\nHeading level {}\n\nLink: `{}`",
-                            content, level, header_id
+                            "# {content}\n\nHeading level {level}\n\nLink: `{header_id}`"
                         ))),
                         insert_text: Some(insert_text),
                         ..Default::default()

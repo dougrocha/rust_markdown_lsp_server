@@ -6,6 +6,7 @@ use crate::{
         Document,
     },
     lsp::server::Server,
+    get_document,
     path::combine_and_normalize,
 };
 use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range, Uri};
@@ -18,10 +19,7 @@ pub fn process_goto_definition(
     let uri = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
-    let document = lsp.documents.get_document(&uri).context(format!(
-        "Document '{:?}' not found in workspace",
-        uri.as_str()
-    ))?;
+    let document = get_document!(lsp, &uri);
 
     let reference = document.get_reference_at_position(position);
 
@@ -33,7 +31,7 @@ pub fn process_goto_definition(
         ReferenceKind::Link { target, header, .. }
         | ReferenceKind::WikiLink { target, header, .. } => {
             let (document, range) =
-                find_definition(lsp, document, &target, header.as_ref().cloned())?;
+                find_definition(lsp, document, target, header.as_ref().cloned())?;
 
             Ok(Some(GotoDefinitionResponse::from(Location {
                 uri: document.uri.clone(),
@@ -52,10 +50,7 @@ fn find_definition<'a>(
 ) -> Result<(&'a Document, Range)> {
     let file_path = combine_and_normalize(&document.uri, &Uri::from_str(target).unwrap())?;
 
-    let document = lsp.documents.get_document(&file_path).context(format!(
-        "Document '{:?}' not found in workspace",
-        file_path.as_str()
-    ))?;
+    let document = get_document!(lsp, &file_path);
 
     for reference in &document.references {
         match &reference.kind {
