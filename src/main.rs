@@ -135,18 +135,18 @@ where
 {
     let message = handle_message(reader)?;
 
-    if let Message::Request(request) = message {
-        if request.method == "initialize" {
-            let (result, params) = process_initialize(request)?;
-            let msg = encode_message(&result)?;
-            write_msg(writer, &msg)?;
-            return Ok(params);
-        }
+    let Message::Request(request) = message else {
+        Err(miette!("First message was not a request"))
+    };
 
-        return Err(miette!("First request must be 'initialize'"));
+    if request.method == "initialize" {
+        let (result, params) = process_initialize(request)?;
+        let msg = encode_message(&result)?;
+        write_msg(writer, &msg)?;
+        return Ok(params);
     }
 
-    Err(miette!("First message was not a request"))
+    return Err(miette!("First request must be 'initialize'"));
 }
 
 fn handle_request<R, W, F>(

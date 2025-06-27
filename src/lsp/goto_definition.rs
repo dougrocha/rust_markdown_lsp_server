@@ -25,22 +25,22 @@ pub fn process_goto_definition(
 
     let reference = document.get_reference_at_position(position);
 
-    if let Some(reference) = reference {
-        match &reference.kind {
-            ReferenceKind::Link { target, header, .. }
-            | ReferenceKind::WikiLink { target, header, .. } => {
-                let (document, range) =
-                    find_definition(lsp, document, &target, header.as_ref().cloned())?;
+    let Some(reference) = reference else {
+        return Err(miette::miette!("Definition not found"));
+    };
 
-                Ok(Some(GotoDefinitionResponse::from(Location {
-                    uri: document.uri.clone(),
-                    range,
-                })))
-            }
-            _ => Ok(None),
+    match &reference.kind {
+        ReferenceKind::Link { target, header, .. }
+        | ReferenceKind::WikiLink { target, header, .. } => {
+            let (document, range) =
+                find_definition(lsp, document, &target, header.as_ref().cloned())?;
+
+            Ok(Some(GotoDefinitionResponse::from(Location {
+                uri: document.uri.clone(),
+                range,
+            })))
         }
-    } else {
-        Err(miette::miette!("Definition not found"))
+        _ => Ok(None),
     }
 }
 

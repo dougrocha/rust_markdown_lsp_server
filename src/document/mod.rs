@@ -66,71 +66,71 @@ impl Document {
             });
         }
 
-        if let Some(parsed_markdown) = parsed_markdown {
-            let body = parsed_markdown.body;
-            body.into_iter().for_each(|spanned| {
-                let Spanned(markdown, span) = spanned;
-                match markdown {
-                    MarkdownNode::Header { level, content } => {
-                        let reference = Reference {
-                            kind: ReferenceKind::Header {
-                                level,
-                                content: content.to_string(),
-                            },
-                            range: self.byte_to_lsp_range(&span.into_range()),
-                        };
-                        self.references.push(reference);
-                    }
-                    MarkdownNode::Paragraph(inlines) => {
-                        for inline in inlines {
-                            let Spanned(inline_markdown, inline_span) = inline;
+        let Some(parsed_markdown) = parsed_markdown else {
+            return Ok(());
+        };
 
-                            match inline_markdown {
-                                InlineMarkdownNode::Link(link) => match link {
-                                    LinkType::InlineLink { text, uri, header } => {
-                                        let reference = Reference {
-                                            kind: ReferenceKind::Link {
-                                                target: uri.to_string(),
-                                                alt_text: text.to_string(),
-                                                title: None,
-                                                header: header.map(|x| TargetHeader {
-                                                    level: x.level,
-                                                    content: x.slug.to_string(),
-                                                }),
-                                            },
-                                            range: self
-                                                .byte_to_lsp_range(&inline_span.into_range()),
-                                        };
-                                        self.references.push(reference);
-                                    }
-                                    LinkType::WikiLink {
-                                        target,
-                                        display_text,
-                                        header,
-                                    } => {
-                                        let reference = Reference {
-                                            kind: ReferenceKind::WikiLink {
-                                                target: target.to_string(),
-                                                alias: display_text.map(|d| d.to_string()),
-                                                header: header.map(|x| TargetHeader {
-                                                    level: x.level,
-                                                    content: x.slug.to_string(),
-                                                }),
-                                            },
-                                            range: self
-                                                .byte_to_lsp_range(&inline_span.into_range()),
-                                        };
-                                        self.references.push(reference);
-                                    }
-                                },
-                                _ => {}
-                            }
+        let body = parsed_markdown.body;
+        body.into_iter().for_each(|spanned| {
+            let Spanned(markdown, span) = spanned;
+            match markdown {
+                MarkdownNode::Header { level, content } => {
+                    let reference = Reference {
+                        kind: ReferenceKind::Header {
+                            level,
+                            content: content.to_string(),
+                        },
+                        range: self.byte_to_lsp_range(&span.into_range()),
+                    };
+                    self.references.push(reference);
+                }
+                MarkdownNode::Paragraph(inlines) => {
+                    for inline in inlines {
+                        let Spanned(inline_markdown, inline_span) = inline;
+
+                        match inline_markdown {
+                            InlineMarkdownNode::Link(link) => match link {
+                                LinkType::InlineLink { text, uri, header } => {
+                                    let reference = Reference {
+                                        kind: ReferenceKind::Link {
+                                            target: uri.to_string(),
+                                            alt_text: text.to_string(),
+                                            title: None,
+                                            header: header.map(|x| TargetHeader {
+                                                level: x.level,
+                                                content: x.slug.to_string(),
+                                            }),
+                                        },
+                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                    };
+                                    self.references.push(reference);
+                                }
+                                LinkType::WikiLink {
+                                    target,
+                                    display_text,
+                                    header,
+                                } => {
+                                    let reference = Reference {
+                                        kind: ReferenceKind::WikiLink {
+                                            target: target.to_string(),
+                                            alias: display_text.map(|d| d.to_string()),
+                                            header: header.map(|x| TargetHeader {
+                                                level: x.level,
+                                                content: x.slug.to_string(),
+                                            }),
+                                        },
+                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                    };
+                                    self.references.push(reference);
+                                }
+                            },
+                            _ => {}
                         }
                     }
-                    _ => {}
                 }
-            });
-        }
+                _ => {}
+            }
+        });
 
         Ok(())
     }
