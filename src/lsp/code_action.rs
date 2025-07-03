@@ -1,5 +1,5 @@
 use lsp_types::{
-    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse, Command,
+    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
     CreateFile, DocumentChangeOperation, DocumentChanges, OneOf,
     OptionalVersionedTextDocumentIdentifier, Position, Range, ResourceOp, TextDocumentEdit,
     TextEdit, Uri, WorkspaceEdit,
@@ -10,7 +10,7 @@ use crate::{
     document::references::{ReferenceKind, TargetHeader},
     get_document,
     lsp::{helpers::extract_header_section, server::Server},
-    path::get_parent_path,
+    path::{find_relative_path, get_parent_path},
     UriExt,
 };
 
@@ -76,7 +76,7 @@ fn handle_non_range(
                     })),
                     DocumentChangeOperation::Edit(TextDocumentEdit {
                         text_document: OptionalVersionedTextDocumentIdentifier {
-                            uri: new_file_uri,
+                            uri: new_file_uri.clone(),
                             version: None,
                         },
                         edits: vec![OneOf::Left(TextEdit::new(
@@ -92,11 +92,11 @@ fn handle_non_range(
                             uri: uri.clone(),
                             version: None,
                         },
-                        edits: vec![OneOf::Left(TextEdit::new(
-                            range,
-                            // TODO: Change this from empty to link to new file and link
-                            "".to_owned(),
-                        ))],
+                        edits: vec![OneOf::Left(TextEdit::new(range, {
+                            let relative_path = find_relative_path(uri, &new_file_uri)
+                                .unwrap_or_else(|_| new_file_uri.to_string());
+                            format!("[{}]({})\n\n", content, relative_path)
+                        }))],
                     }),
                 ]);
 
@@ -111,14 +111,6 @@ fn handle_non_range(
                         title: "Extract header & section".to_owned(),
                         kind: Some(CodeActionKind::REFACTOR_EXTRACT),
                         edit: Some(workspace_edit),
-                        command: Some(Command {
-                            title: "Save new file".to_owned(),
-                            command: "rustMarkdown.saveFile".to_owned(),
-                            arguments: Some(vec![serde_json::json!(format!(
-                                "/Users/douglasrocha/dev/rust_markdown_lsp/{}.md",
-                                content.to_string()
-                            ))]),
-                        }),
                         ..Default::default()
                     }
                     .into(),
