@@ -95,7 +95,7 @@ fn handle_non_range(
                         edits: vec![OneOf::Left(TextEdit::new(range, {
                             let relative_path = find_relative_path(uri, &new_file_uri)
                                 .unwrap_or_else(|_| new_file_uri.to_string());
-                            format!("[{}]({})\n\n", content, relative_path)
+                            format!("[{content}]({relative_path})\n\n")
                         }))],
                     }),
                 ]);
