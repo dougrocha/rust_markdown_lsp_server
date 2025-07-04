@@ -2,7 +2,10 @@ use lsp_types::{ClientCapabilities, Uri, WorkspaceFolder};
 use miette::{miette, Context, IntoDiagnostic, Result};
 use std::collections::HashMap;
 
-use crate::{document::Document, UriExt};
+use crate::{
+    document::{references::Reference, Document},
+    UriExt,
+};
 
 #[derive(Default)]
 pub struct DocumentStore {
@@ -39,6 +42,16 @@ impl DocumentStore {
 
     pub fn get_documents(&self) -> impl Iterator<Item = &Document> {
         self.documents.values()
+    }
+
+    pub fn get_references(&self) -> impl Iterator<Item = &Reference> {
+        self.get_documents().flat_map(|doc| doc.references.iter())
+    }
+
+    pub fn get_references_with_uri(&self) -> impl Iterator<Item = (&Uri, &Reference)> {
+        self.documents
+            .iter()
+            .flat_map(|(uri, doc)| doc.references.iter().map(move |reference| (uri, reference)))
     }
 }
 
