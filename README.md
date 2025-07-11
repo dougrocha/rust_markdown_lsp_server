@@ -1,7 +1,7 @@
 # Another Markdown LSP
 
-A project primarily to learn how an LSP works — and because I like both
-Marksman and zk-nvim, but I can't use them at the same time.
+A project primarily to learn how an LSP works — and because I like features
+from both Marksman and zk-nvim, but I can't use them at the same time.
 
 ### Features
 
@@ -22,17 +22,21 @@ Currently, this server supports:
 - [x] `textDocument/codeAction`
   - Shows a preview of linked documents on hover
   - [x] Wiki-links
-  - [ ] Regular links
+  - [x] Regular links
 - [x] `textDocument/definition`
-- [ ] `textDocument/references`
+- [x] `textDocument/references`
+  - References for headings
   - Link notes Zettelkasten-style
 - [ ] `textDocument/rename`
   - Rename files and headers
-- [ ] `textDocument/codeAction`
-  - Refactor sections
+- [x] `textDocument/codeAction`
+  - Extract sections
+  - [ ] Bring in a section
 - [ ] `textDocument/publishDiagnostics`
   - Show errors not detected by diagnostics
-- [ ] `textDocument/completion`
+  - Currently half working, will depend on my parser
+- [x] `textDocument/completion`
+  - Also half working, wondering if I should sort them server side
 
 ---
 
