@@ -30,8 +30,7 @@ pub fn process_goto_definition(
     match &reference.kind {
         ReferenceKind::Link { target, header, .. }
         | ReferenceKind::WikiLink { target, header, .. } => {
-            let (document, range) =
-                find_definition(lsp, document, target, header.as_ref().cloned())?;
+            let (document, range) = find_definition(lsp, document, target, header.as_ref())?;
 
             Ok(Some(GotoDefinitionResponse::from(Location {
                 uri: document.uri.clone(),
@@ -46,7 +45,7 @@ fn find_definition<'a>(
     lsp: &'a Server,
     document: &Document,
     target: &str,
-    header: Option<TargetHeader>,
+    header: Option<&TargetHeader>,
 ) -> Result<(&'a Document, Range)> {
     let file_path = combine_and_normalize(&document.uri, &Uri::from_str(target).unwrap())?;
 
