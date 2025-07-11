@@ -35,7 +35,7 @@ pub fn get_content(
     lsp: &Server,
     document: &Document,
     target: &str,
-    header: Option<TargetHeader>,
+    header: Option<&TargetHeader>,
 ) -> Result<String> {
     let file_path = combine_and_normalize(&document.uri, &Uri::from_str(target).unwrap())?;
 
@@ -50,7 +50,7 @@ pub fn get_content(
     };
 
     let (extracted_content, _range) =
-        extract_header_section(&header_target, &document.references, slice);
+        extract_header_section(header_target, &document.references, slice);
 
     match extracted_content {
         Some(content) => Ok(content.to_string()),

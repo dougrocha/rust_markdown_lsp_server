@@ -58,7 +58,7 @@ fn find_definition<'a>(
                 return Ok((document, reference.range));
             }
 
-            let target_header = header.clone().unwrap();
+            let target_header = header.unwrap();
             let target_content = target_header
                 .content
                 .strip_prefix('#')
