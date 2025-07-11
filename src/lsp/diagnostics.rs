@@ -4,6 +4,8 @@ use lsp_types::{
 };
 use miette::{Context, Result};
 
+use crate::get_document;
+
 use super::server::Server;
 
 pub fn process_diagnostic(
@@ -11,10 +13,8 @@ pub fn process_diagnostic(
     params: DocumentDiagnosticParams,
 ) -> Result<DocumentDiagnosticReportResult> {
     let uri = params.text_document.uri;
-    let document = lsp.documents.get_document(&uri).context(format!(
-        "Document '{:?}' not found in workspace",
-        uri.as_str()
-    ))?;
+
+    let document = get_document!(&lsp, &uri);
 
     Ok(DocumentDiagnosticReportResult::Report(
         DocumentDiagnosticReport::Full(RelatedFullDocumentDiagnosticReport {

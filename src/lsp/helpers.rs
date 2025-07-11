@@ -9,6 +9,7 @@ use crate::{
         references::{ReferenceKind, TargetHeader},
         Document,
     },
+    get_document,
     lsp::server::Server,
     path::combine_and_normalize,
     Reference, TextBufferConversions,
@@ -39,10 +40,8 @@ pub fn get_content(
 ) -> Result<String> {
     let file_path = combine_and_normalize(&document.uri, &Uri::from_str(target).unwrap())?;
 
-    let document = lsp.documents.get_document(&file_path).context(format!(
-        "Document '{:?}' not found in workspace",
-        file_path.as_str()
-    ))?;
+    let document = get_document!(&lsp, &file_path);
+
     let slice = document.content.slice(..);
 
     let Some(header_target) = header else {
