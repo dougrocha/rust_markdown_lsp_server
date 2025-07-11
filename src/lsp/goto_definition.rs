@@ -1,15 +1,15 @@
-use std::str::FromStr;
-
 use crate::{
     document::{
         references::{ReferenceKind, TargetHeader},
         Document,
     },
     get_document,
-    lsp::{helpers::normalize_header_content, server::Server},
-    path::combine_and_normalize,
+    lsp::{
+        helpers::{normalize_header_content, resolve_target_uri},
+        server::Server,
+    },
 };
-use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range, Uri};
+use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range};
 use miette::{Context, Result};
 
 pub fn process_goto_definition(
@@ -47,7 +47,7 @@ fn find_definition<'a>(
     target: &str,
     header: Option<&TargetHeader>,
 ) -> Result<(&'a Document, Range)> {
-    let file_path = combine_and_normalize(&document.uri, &Uri::from_str(target).unwrap())?;
+    let file_path = resolve_target_uri(document, target, lsp.root())?;
 
     let document = get_document!(lsp, &file_path);
 
