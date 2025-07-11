@@ -6,9 +6,7 @@ macro_rules! dispatch_lsp_request {
         match $request.method.as_str() {
             $(
                 <$req_type as lsp_types::request::Request>::METHOD => {
-                    if let Err(e) = handle_request::<$req_type, _, _>($lsp, $request, $writer, $handler) {
-                        log::error!("Failed to handle {}: {}", stringify!($req_type), e);
-                    }
+                    handle_request::<$req_type, _, _>($lsp, $request, $writer, $handler)?;
                 }
             )*
             method => {

@@ -75,6 +75,10 @@ impl Server {
         self.client_capabilities = Some(capabilities);
     }
 
+    pub fn root(&self) -> Option<&Uri> {
+        self.root.as_ref()
+    }
+
     pub fn load_workspaces(
         &mut self,
         workspace_folders: Option<Vec<WorkspaceFolder>>,
