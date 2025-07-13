@@ -5,10 +5,7 @@ use miette::{miette, Context, Result};
 use ropey::RopeSlice;
 
 use crate::{
-    document::{
-        references::{ReferenceKind, TargetHeader},
-        Document,
-    },
+    document::{references::ReferenceKind, Document},
     get_document,
     lsp::server::Server,
     path::combine_and_normalize,
@@ -62,7 +59,7 @@ pub fn get_content(
     lsp: &Server,
     document: &Document,
     target: &str,
-    header: Option<&TargetHeader>,
+    header: Option<&str>,
 ) -> Result<String> {
     let file_path = resolve_target_uri(document, target, lsp.root())?;
 
@@ -94,7 +91,7 @@ pub fn get_content(
 /// - H2 section continues until the next H1 or H2
 /// - H3 section continues until the next H1, H2, or H3
 pub fn extract_header_section<'a>(
-    header: &TargetHeader,
+    header: &str,
     links: &[Reference],
     content: RopeSlice<'a>,
 ) -> (Option<RopeSlice<'a>>, Range) {
@@ -110,7 +107,7 @@ pub fn extract_header_section<'a>(
         } = &link.kind
         {
             // Check if this header matches our target header
-            let target_content = header.content.strip_prefix('#').unwrap_or(&header.content);
+            let target_content = header.strip_prefix('#').unwrap_or(&header);
 
             // Try multiple matching strategies:
             // 1. Exact match with stripped prefix
@@ -192,7 +189,7 @@ mod tests {
 
     #[test]
     fn test_extract_header_section_hierarchy() {
-        use crate::document::references::{Reference, ReferenceKind, TargetHeader};
+        use crate::document::references::{Reference, ReferenceKind};
         use lsp_types::{Position, Range};
         use ropey::Rope;
 
@@ -248,10 +245,7 @@ mod tests {
         ];
 
         // Test H3 section extraction - should stop at next H3, H2, or H1
-        let target_header = TargetHeader {
-            level: 3,
-            content: "H3 Header".to_string(),
-        };
+        let target_header = "H3 Header".to_string();
         let (extracted, _range) = extract_header_section(&target_header, &references, slice);
 
         assert!(extracted.is_some(), "Should extract H3 section");
@@ -268,10 +262,7 @@ mod tests {
         );
 
         // Test H2 section extraction - should stop at next H2 or H1
-        let target_header = TargetHeader {
-            level: 2,
-            content: "H2 Header".to_string(),
-        };
+        let target_header = "H2 Header".to_string();
         let (extracted, _range) = extract_header_section(&target_header, &references, slice);
 
         assert!(extracted.is_some(), "Should extract H2 section");
@@ -327,7 +318,7 @@ mod tests {
 
     #[test]
     fn test_extract_header_section_edge_cases() {
-        use crate::document::references::{Reference, ReferenceKind, TargetHeader};
+        use crate::document::references::{Reference, ReferenceKind};
         use lsp_types::{Position, Range};
         use ropey::Rope;
 
@@ -354,10 +345,7 @@ mod tests {
         ];
 
         // Test H1 extraction - should go to end of file
-        let target_header = TargetHeader {
-            level: 1,
-            content: "Main Header".to_string(),
-        };
+        let target_header = "Main Header".to_string();
         let (extracted, _range) = extract_header_section(&target_header, &references, slice);
 
         assert!(extracted.is_some(), "Should extract H1 section");
@@ -378,10 +366,7 @@ mod tests {
         );
 
         // Test with hash prefix in target
-        let target_header_with_hash = TargetHeader {
-            level: 1,
-            content: "#Main Header".to_string(),
-        };
+        let target_header_with_hash = "#Main Header";
         let (extracted, _range) =
             extract_header_section(&target_header_with_hash, &references, slice);
 

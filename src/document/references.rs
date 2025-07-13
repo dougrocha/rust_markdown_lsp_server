@@ -35,19 +35,13 @@ pub enum ReferenceKind {
         target: String,
         alt_text: String,
         title: Option<String>,
-        header: Option<TargetHeader>,
+        header: Option<String>,
     },
     WikiLink {
         target: String,
         alias: Option<String>,
-        header: Option<TargetHeader>,
+        header: Option<String>,
     },
-}
-
-#[derive(Debug, Clone, PartialEq)]
-pub struct TargetHeader {
-    pub level: usize,
-    pub content: String,
 }
 
 impl ReferenceKind {
