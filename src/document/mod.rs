@@ -3,7 +3,7 @@ use std::ops::Range;
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Uri};
 use miette::Result;
 use parser::{markdown_parser, InlineMarkdownNode, LinkType, MarkdownNode, Parser, Spanned};
-use references::{Reference, ReferenceKind, TargetHeader};
+use references::{Reference, ReferenceKind};
 use ropey::Rope;
 
 pub mod references;
@@ -96,10 +96,7 @@ impl Document {
                                             target: uri.to_string(),
                                             alt_text: text.to_string(),
                                             title: None,
-                                            header: header.map(|x| TargetHeader {
-                                                level: x.level,
-                                                content: x.slug.to_string(),
-                                            }),
+                                            header: header.map(|x| x.to_string()),
                                         },
                                         range: self.byte_to_lsp_range(&inline_span.into_range()),
                                     };
@@ -114,10 +111,7 @@ impl Document {
                                         kind: ReferenceKind::WikiLink {
                                             target: target.to_string(),
                                             alias: display_text.map(|d| d.to_string()),
-                                            header: header.map(|x| TargetHeader {
-                                                level: x.level,
-                                                content: x.slug.to_string(),
-                                            }),
+                                            header: header.map(|x| x.to_string()),
                                         },
                                         range: self.byte_to_lsp_range(&inline_span.into_range()),
                                     };

@@ -47,12 +47,12 @@ pub enum LinkType<'a> {
     InlineLink {
         text: &'a str,
         uri: &'a str,
-        header: Option<HeaderRef<'a>>,
+        header: Option<&'a str>,
     },
     WikiLink {
         target: &'a str,
         display_text: Option<&'a str>,
-        header: Option<HeaderRef<'a>>,
+        header: Option<&'a str>,
     },
 }
 

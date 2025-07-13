@@ -1,6 +1,6 @@
 use chumsky::prelude::*;
 
-use crate::{HeaderRef, InlineMarkdownNode, LinkType, MarkdownNode, ParseError, Spanned};
+use crate::{InlineMarkdownNode, LinkType, MarkdownNode, ParseError, Spanned};
 
 pub fn header_parser<'a>() -> impl Parser<'a, &'a str, MarkdownNode<'a>, ParseError<'a>> {
     let hashes = just('#')
@@ -98,13 +98,6 @@ pub fn wikilink_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>,
         .map(|alias: &'a str| alias.trim())
         .map(|alias| (!alias.is_empty()).then_some(alias));
 
-    let header_level = just('#')
-        .repeated()
-        .at_least(1)
-        .at_most(6)
-        .count()
-        .labelled("hashes");
-
     let header_content = any()
         .filter(|c: &char| !['|', ']', '\n'].contains(c))
         .repeated()
@@ -112,12 +105,10 @@ pub fn wikilink_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>,
         .to_slice()
         .labelled("WikiLink Header Parser");
 
-    let header = header_level
-        .then(header_content)
-        .map(|(level, content)| HeaderRef {
-            level,
-            slug: content,
-        });
+    let header = just('#')
+        .ignore_then(header_content)
+        .map(|content| content)
+        .labelled("Header Level Parser");
 
     let possible_alias = choice((
         just('|').ignore_then(alias).then_ignore(just("]]")),
@@ -165,13 +156,6 @@ pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, Par
         .map(|title: &str| title.trim())
         .labelled("Link Title Parser");
 
-    let header_level = just('#')
-        .repeated()
-        .at_least(1)
-        .at_most(6)
-        .count()
-        .labelled("hashes");
-
     let header_content = any()
         .filter(|c: &char| ![')', '\n'].contains(c))
         .repeated()
@@ -179,12 +163,10 @@ pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, Par
         .to_slice()
         .labelled("WikiLink Header Parser");
 
-    let header = header_level
-        .then(header_content)
-        .map(|(level, content)| HeaderRef {
-            level,
-            slug: content,
-        });
+    let header = just('#')
+        .ignore_then(header_content)
+        .map(|content| content)
+        .labelled("Header Level Parser");
 
     let uri = any()
         .filter(|c: &char| !['#', ')', '\n'].contains(c))

@@ -1,8 +1,5 @@
 use crate::{
-    document::{
-        references::{ReferenceKind, TargetHeader},
-        Document,
-    },
+    document::{references::ReferenceKind, Document},
     get_document,
     lsp::{
         helpers::{normalize_header_content, resolve_target_uri},
@@ -30,7 +27,7 @@ pub fn process_goto_definition(
     match &reference.kind {
         ReferenceKind::Link { target, header, .. }
         | ReferenceKind::WikiLink { target, header, .. } => {
-            let (document, range) = find_definition(lsp, document, target, header.as_ref())?;
+            let (document, range) = find_definition(lsp, document, target, header.as_deref())?;
 
             Ok(Some(GotoDefinitionResponse::from(Location {
                 uri: document.uri.clone(),
@@ -45,7 +42,7 @@ fn find_definition<'a>(
     lsp: &'a Server,
     document: &Document,
     target: &str,
-    header: Option<&TargetHeader>,
+    header: Option<&str>,
 ) -> Result<(&'a Document, Range)> {
     let file_path = resolve_target_uri(document, target, lsp.root())?;
 
@@ -58,10 +55,7 @@ fn find_definition<'a>(
             }
 
             let target_header = header.unwrap();
-            let target_content = target_header
-                .content
-                .strip_prefix('#')
-                .unwrap_or(&target_header.content);
+            let target_content = target_header.strip_prefix('#').unwrap_or(&target_header);
 
             // Try multiple matching strategies:
             // 1. Exact match

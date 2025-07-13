@@ -4,7 +4,7 @@ use lsp_types::{Location, ReferenceParams, Uri};
 use miette::{Context, Result};
 
 use crate::{
-    document::references::{Reference as DocReference, ReferenceKind, TargetHeader},
+    document::references::{Reference as DocReference, ReferenceKind},
     get_document,
     lsp::helpers::normalize_header_content,
     UriExt,
@@ -73,7 +73,7 @@ impl<'a> ReferenceCollector<'a> {
             }
             ReferenceKind::Link { header, target, .. }
             | ReferenceKind::WikiLink { header, target, .. } => {
-                self.match_link_reference(uri, reference, header.as_ref(), target)
+                self.match_link_reference(uri, reference, header.as_deref(), target)
             }
         }
     }
@@ -88,7 +88,7 @@ impl<'a> ReferenceCollector<'a> {
         let link_header = link_header?;
 
         if uri_matches_path(self.source_uri, link_target)
-            && headers_match(source_content, &link_header.content)
+            && headers_match(source_content, &link_header)
         {
             Some(Location::new(uri.clone(), reference.range))
         } else {
@@ -100,32 +100,25 @@ impl<'a> ReferenceCollector<'a> {
         &self,
         uri: &lsp_types::Uri,
         reference: &DocReference,
-        source_header: Option<&TargetHeader>,
+        source_header: Option<&str>,
         source_target: &str,
     ) -> Option<Location> {
+        let location = Location::new(uri.clone(), reference.range);
+
         match &reference.kind {
             ReferenceKind::Link { header, target, .. }
             | ReferenceKind::WikiLink { header, target, .. } => {
-                if source_target == target && headers_are_compatible(source_header, header.as_ref())
+                if source_target == target
+                    && headers_are_compatible(source_header, header.as_deref())
                 {
-                    Some(Location::new(uri.clone(), reference.range))
+                    Some(location)
                 } else {
                     None
                 }
             }
-            ReferenceKind::Header { content, .. } => {
-                if let Some(source_header) = source_header {
-                    if uri_matches_path(uri, source_target)
-                        && headers_match(content, &source_header.content)
-                    {
-                        Some(Location::new(uri.clone(), reference.range))
-                    } else {
-                        None
-                    }
-                } else {
-                    None
-                }
-            }
+            ReferenceKind::Header { content, .. } => source_header
+                .filter(|sh| uri_matches_path(uri, source_target) && headers_match(content, &sh))
+                .map(|_| location),
         }
     }
 }
@@ -134,17 +127,17 @@ fn headers_match(content1: &str, content2: &str) -> bool {
     normalize_header_content(content1) == normalize_header_content(content2)
 }
 
-fn extract_link_parts(kind: &ReferenceKind) -> Option<(Option<&TargetHeader>, &str)> {
+fn extract_link_parts(kind: &ReferenceKind) -> Option<(Option<&str>, &str)> {
     match kind {
         ReferenceKind::Link { header, target, .. }
-        | ReferenceKind::WikiLink { header, target, .. } => Some((header.as_ref(), target)),
+        | ReferenceKind::WikiLink { header, target, .. } => Some((header.as_deref(), target)),
         _ => None,
     }
 }
 
-fn headers_are_compatible(h1: Option<&TargetHeader>, h2: Option<&TargetHeader>) -> bool {
+fn headers_are_compatible(h1: Option<&str>, h2: Option<&str>) -> bool {
     match (h1, h2) {
-        (Some(header1), Some(header2)) => header1.content == header2.content,
+        (Some(header1), Some(header2)) => header1 == header2,
         (None, None) => true,
         _ => false,
     }

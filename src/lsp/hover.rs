@@ -16,7 +16,7 @@ pub fn process_hover(lsp: &mut Server, params: HoverParams) -> Result<Option<Hov
         Some(reference) => match &reference.kind {
             ReferenceKind::Link { target, header, .. }
             | ReferenceKind::WikiLink { target, header, .. } => {
-                let contents = helpers::get_content(lsp, document, target, header.as_ref())?;
+                let contents = helpers::get_content(lsp, document, target, header.as_deref())?;
                 Ok(Some(Hover {
                     contents: HoverContents::Markup(MarkupContent {
                         kind: MarkupKind::Markdown,

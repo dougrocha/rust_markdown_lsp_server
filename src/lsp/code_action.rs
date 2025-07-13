@@ -7,7 +7,7 @@ use lsp_types::{
 use miette::{miette, Context, Result};
 
 use crate::{
-    document::references::{ReferenceKind, TargetHeader},
+    document::references::ReferenceKind,
     get_document,
     lsp::{helpers::extract_header_section, server::Server},
     path::{find_relative_path, get_parent_path},
@@ -45,15 +45,9 @@ fn handle_non_range(
 
     let mut actions: Vec<CodeActionOrCommand> = Vec::new();
     match &reference.kind {
-        ReferenceKind::Header { level, content, .. } => {
-            let (header_content, range) = extract_header_section(
-                &TargetHeader {
-                    level: *level,
-                    content: content.to_owned(),
-                },
-                &document.references,
-                slice,
-            );
+        ReferenceKind::Header { content, .. } => {
+            let (header_content, range) =
+                extract_header_section(content, &document.references, slice);
 
             let parent = get_parent_path(uri).unwrap();
             let new_file_uri = Uri::from_file_path(format!(
