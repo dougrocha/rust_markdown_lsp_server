@@ -1,8 +1,9 @@
 use std::{
-    fs::File,
+    fs,
     io::{self, BufRead, Write},
 };
 
+use etcetera::{choose_base_strategy, BaseStrategy};
 use log::{debug, info, warn};
 use lsp_types::{
     error_codes,
@@ -31,10 +32,16 @@ use rust_markdown_lsp::{
 };
 
 fn main() -> Result<()> {
+    // Place the log file in the XDG cache path
+    let strategy = choose_base_strategy().unwrap();
+    let log_path = strategy.cache_dir().join(env!("CARGO_PKG_NAME"));
+
+    fs::create_dir_all(&log_path).into_diagnostic()?;
+
     let _ = WriteLogger::init(
         LevelFilter::max(),
         Config::default(),
-        File::create("log.txt").expect("Failed to create log file"),
+        fs::File::create(log_path.join("log.txt")).expect("Failed to create log file: {log_path}"),
     );
 
     // let test_file = std::fs::read_to_string("test.md").unwrap();

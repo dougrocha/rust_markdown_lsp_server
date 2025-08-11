@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [workspace]
-members = [ 
+members = [
     "crates/parser",
 ]
 resolver = "2"
@@ -12,6 +12,7 @@ resolver = "2"
 [workspace.dependencies]
 ariadne = "0.5.0"
 chumsky = "0.10.1"
+etcetera = "0.10.0"
 log = "0.4.26"
 lsp-types = "0.97.0"
 miette = "7.5.0"
@@ -26,6 +27,7 @@ walkdir = "2.5.0"
 
 [dependencies]
 ariadne = { workspace = true }
+etcetera = { workspace = true }
 log = { workspace = true }
 lsp-types = { workspace = true }
 miette = { workspace = true }
