@@ -1,7 +1,7 @@
 use std::str::FromStr;
 
 use lsp_types::{Position, Range, Uri};
-use miette::{miette, Context, Result};
+use miette::{miette, Context, IntoDiagnostic, Result};
 use ropey::RopeSlice;
 
 use crate::{
@@ -32,7 +32,7 @@ pub fn resolve_target_uri(document: &Document, target: &str, root: Option<&Uri>)
             ))
         }
     } else {
-        let target_uri = Uri::from_str(target).unwrap();
+        let target_uri = Uri::from_str(target).into_diagnostic()?;
         // Relative path - resolve relative to current document
         combine_and_normalize(&document.uri, &target_uri)
     }
@@ -153,6 +153,8 @@ pub fn extract_header_section<'a>(
 
 #[cfg(test)]
 mod tests {
+    use parser::Parser;
+
     use super::*;
 
     #[test]
@@ -166,6 +168,10 @@ mod tests {
         assert_eq!(normalize_header_content("Example_Header"), "example-header");
         assert_eq!(
             normalize_header_content("Example & Header"),
+            "example-header"
+        );
+        assert_eq!(
+            normalize_header_content("Example Header!"),
             "example-header"
         );
     }
@@ -191,62 +197,17 @@ mod tests {
     fn test_extract_header_section_hierarchy() {
         use crate::document::references::{Reference, ReferenceKind};
         use lsp_types::{Position, Range};
-        use ropey::Rope;
 
         // Create test content with nested headers
-        let content = "# H1 Header\nContent under H1\n\n## H2 Header\nContent under H2\n\n### H3 Header\nContent under H3\n\n### Another H3\nMore H3 content\n\n## Another H2\nMore H2 content\n\n# Another H1\nMore H1 content";
-        let rope = Rope::from_str(content);
-        let slice = rope.slice(..);
+        let input = "# H1 Header\nContent under H1\n\n## H2 Header\nContent under H2\n\n### H3 Header\nContent under H3\n\n### Another H3\nMore H3 content\n\n## Another H2\nMore H2 content\n\n# Another H1\nMore H1 content";
 
-        // Create references for headers
-        let references = vec![
-            Reference {
-                kind: ReferenceKind::Header {
-                    level: 1,
-                    content: "H1 Header".to_string(),
-                },
-                range: Range::new(Position::new(0, 0), Position::new(0, 10)),
-            },
-            Reference {
-                kind: ReferenceKind::Header {
-                    level: 2,
-                    content: "H2 Header".to_string(),
-                },
-                range: Range::new(Position::new(3, 0), Position::new(3, 12)),
-            },
-            Reference {
-                kind: ReferenceKind::Header {
-                    level: 3,
-                    content: "H3 Header".to_string(),
-                },
-                range: Range::new(Position::new(6, 0), Position::new(6, 13)),
-            },
-            Reference {
-                kind: ReferenceKind::Header {
-                    level: 3,
-                    content: "Another H3".to_string(),
-                },
-                range: Range::new(Position::new(9, 0), Position::new(9, 14)),
-            },
-            Reference {
-                kind: ReferenceKind::Header {
-                    level: 2,
-                    content: "Another H2".to_string(),
-                },
-                range: Range::new(Position::new(12, 0), Position::new(12, 14)),
-            },
-            Reference {
-                kind: ReferenceKind::Header {
-                    level: 1,
-                    content: "Another H1".to_string(),
-                },
-                range: Range::new(Position::new(15, 0), Position::new(15, 14)),
-            },
-        ];
+        let document = Document::new(Uri::from_str("/TEST.md").unwrap(), input, 0).unwrap();
+        let references = document.references;
+        let content = document.content.slice(..);
 
         // Test H3 section extraction - should stop at next H3, H2, or H1
         let target_header = "H3 Header".to_string();
-        let (extracted, _range) = extract_header_section(&target_header, &references, slice);
+        let (extracted, _range) = extract_header_section(&target_header, &references, content);
 
         assert!(extracted.is_some(), "Should extract H3 section");
         let extracted_text = extracted.unwrap().to_string();
@@ -263,7 +224,7 @@ mod tests {
 
         // Test H2 section extraction - should stop at next H2 or H1
         let target_header = "H2 Header".to_string();
-        let (extracted, _range) = extract_header_section(&target_header, &references, slice);
+        let (extracted, _range) = extract_header_section(&target_header, &references, content);
 
         assert!(extracted.is_some(), "Should extract H2 section");
         let extracted_text = extracted.unwrap().to_string();
@@ -368,7 +329,7 @@ mod tests {
         // Test with hash prefix in target
         let target_header_with_hash = "#Main Header";
         let (extracted, _range) =
-            extract_header_section(&target_header_with_hash, &references, slice);
+            extract_header_section(target_header_with_hash, &references, slice);
 
         assert!(
             extracted.is_some(),
