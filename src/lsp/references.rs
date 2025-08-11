@@ -26,12 +26,12 @@ pub fn process_references(
         return Ok(Some(Vec::new()));
     };
 
-    let reference_collector = ReferenceCollector::new(&uri, reference);
-    // Search for all references across all documents
-    let mut ref_locations = reference_collector.collect_from(&lsp.documents);
+    let mut ref_locations = ReferenceCollector::new(&uri, reference).collect_from(&lsp.documents);
 
+    // Always put the source reference first in the list
     if params.context.include_declaration {
-        ref_locations.push(Location::new(uri.clone(), reference.range));
+        let source_location = Location::new(uri.clone(), reference.range);
+        ref_locations.insert(0, source_location);
     }
 
     Ok(Some(ref_locations))
