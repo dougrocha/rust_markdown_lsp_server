@@ -22,7 +22,7 @@ pub fn process_references(
     let document = get_document!(lsp, &uri);
 
     let Some(reference) = document.get_reference_at_position(position) else {
-        log::debug!("No reference found at position {position:?}");
+        log::error!("No reference found at position {position:?}");
         return Ok(Some(Vec::new()));
     };
 
@@ -34,8 +34,6 @@ pub fn process_references(
         let source_location = Location::new(uri.clone(), reference.range);
         ref_locations.insert(0, source_location);
     }
-
-    log::debug!("Returning {} refs", ref_locations.len());
 
     Ok(Some(ref_locations))
 }
@@ -71,7 +69,6 @@ impl<'a> ReferenceCollector<'a> {
     }
 
     fn is_source_reference(&self, uri: &lsp_types::Uri, reference: &DocReference) -> bool {
-        log::debug!("URI: {:?}, Reference: {:?}", uri, reference);
         uri == self.source_uri && reference.range == self.source_ref.range
     }
 
@@ -89,7 +86,7 @@ impl<'a> ReferenceCollector<'a> {
                 let Ok(resolved_target) =
                     resolve_target_uri(self.source_doc, target, self.lsp.root())
                 else {
-                    log::debug!("Check reference resolution failed");
+                    log::error!("Check reference resolution failed");
                     return None;
                 };
 
@@ -109,8 +106,7 @@ impl<'a> ReferenceCollector<'a> {
 
         let Ok(link_target) = resolve_target_uri(self.source_doc, link_target, self.lsp.root())
         else {
-            log::debug!("Header reference resolution failed");
-
+            log::error!("Header reference resolution failed");
             return None;
         };
 
@@ -136,8 +132,7 @@ impl<'a> ReferenceCollector<'a> {
                 let Ok(resolved_target) =
                     resolve_target_uri(self.source_doc, target, self.lsp.root())
                 else {
-                    log::debug!("Link reference resolution failed");
-
+                    log::error!("Link reference resolution failed");
                     return None;
                 };
 
