@@ -1,7 +1,7 @@
 use chumsky::prelude::*;
 
 use markdown::{footnote_definition_parser, header_parser, paragraph_parser};
-use yaml::{frontmatter_parser, Frontmatter};
+use yaml::{yaml_parser, Frontmatter};
 
 pub use chumsky::Parser;
 
@@ -66,7 +66,7 @@ pub enum InlineMarkdownNode<'a> {
 }
 
 pub fn markdown_parser<'a>() -> impl Parser<'a, &'a str, ParsedMarkdown<'a>, ParseError<'a>> {
-    frontmatter_parser()
+    yaml_parser()
         .or_not()
         .then(
             choice((

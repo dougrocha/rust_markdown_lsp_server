@@ -1,7 +1,7 @@
 use ariadne::{Color, Label, Report, ReportKind, Source};
 use chumsky::prelude::*;
 
-pub fn print_parse_errors(src: &str, errs: Vec<Rich<char>>) {
+pub(crate) fn print_parse_errors(src: &str, errs: Vec<Rich<char>>) {
     errs.into_iter().for_each(|e| {
         Report::build(ReportKind::Error, ("Testing File", e.span().into_range()))
             .with_message(e.to_string())
@@ -16,7 +16,7 @@ pub fn print_parse_errors(src: &str, errs: Vec<Rich<char>>) {
     });
 }
 
-pub fn compare<'a, T: std::fmt::Debug + PartialEq>(
+pub(crate) fn compare<'a, T: std::fmt::Debug + PartialEq>(
     parser: impl Parser<'a, &'a str, T, extra::Err<Rich<'a, char>>>,
     input: &'a str,
     expected: T,

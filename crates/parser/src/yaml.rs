@@ -2,47 +2,87 @@ use chumsky::prelude::*;
 
 use crate::ParseError;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum Yaml<'a> {
     String(&'a str),
-    Array(Vec<&'a str>),
+    List(Vec<&'a str>),
 }
 
-#[derive(Debug, Clone)]
-pub struct Frontmatter<'a>(Vec<(&'a str, Yaml<'a>)>);
+type KeyValue<'a> = (&'a str, Yaml<'a>);
 
-pub fn frontmatter_parser<'a>() -> impl Parser<'a, &'a str, Frontmatter<'a>, ParseError<'a>> {
-    let key = text::ident().labelled("Key");
+#[derive(Debug, Clone, PartialEq)]
+pub struct Frontmatter<'a>(pub Vec<KeyValue<'a>>);
 
-    let single_value = any()
-        .filter(|c| *c != '\n')
+fn unquoted_string<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
+    any()
+        .filter(|c: &char| !c.is_control() && *c != '\n' && *c != ':' && *c != '#')
         .repeated()
+        .at_least(1)
         .to_slice()
-        .map(|v: &'a str| Yaml::String(v.trim()))
-        .then_ignore(text::newline())
-        .labelled("Value");
+}
 
-    let item = just('-').padded().ignore_then(
-        any()
-            .filter(|c| *c != '\n')
-            .repeated()
-            .to_slice()
-            .map(|v: &'a str| v.trim())
-            .then_ignore(text::newline()),
-    );
+fn quoted_string<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
+    just('"')
+        .ignore_then(any().filter(|c| *c != '"').repeated().to_slice())
+        .then_ignore(just('"'))
+}
 
-    let list_item = text::whitespace()
-        .ignore_then(item.repeated().at_least(1).collect::<Vec<_>>())
-        .map(Yaml::Array);
+fn string_value<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
+    quoted_string().or(unquoted_string())
+}
 
-    let value = list_item.or(single_value);
+fn list_item_parser<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
+    text::whitespace()
+        .at_least(1)
+        .then_ignore(just('-'))
+        .then_ignore(text::whitespace())
+        .ignore_then(string_value())
+}
 
-    let line = key.then_ignore(just(':').padded()).then(value);
+fn indented_list_parser<'a>() -> impl Parser<'a, &'a str, Yaml<'a>, ParseError<'a>> {
+    list_item_parser()
+        .separated_by(text::newline())
+        .at_least(1)
+        .collect::<Vec<_>>()
+        .map(Yaml::List)
+}
 
-    just("---")
-        .ignore_then(text::newline())
-        .ignore_then(line.repeated().collect::<Vec<_>>())
-        .then_ignore(just("---"))
-        .then_ignore(text::newline().or_not())
+fn string_value_parser<'a>() -> impl Parser<'a, &'a str, Yaml<'a>, ParseError<'a>> {
+    string_value().map(Yaml::String)
+}
+
+fn key_value_pair_parser<'a>() -> impl Parser<'a, &'a str, KeyValue<'a>, ParseError<'a>> {
+    key_parser().then_ignore(just(':')).then(
+        text::newline()
+            .ignore_then(indented_list_parser())
+            .or(text::whitespace().ignore_then(string_value_parser())),
+    )
+}
+
+fn key_parser<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
+    text::ident().to_slice()
+}
+
+fn front_matter_body_parser<'a>() -> impl Parser<'a, &'a str, Frontmatter<'a>, ParseError<'a>> {
+    key_value_pair_parser()
+        .separated_by(text::newline())
+        .at_least(1)
+        .collect::<Vec<_>>()
         .map(Frontmatter)
+}
+
+fn delimiter<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
+    text::whitespace()
+        .or_not()
+        .ignore_then(just("---"))
+        .then_ignore(text::whitespace().or_not())
+        .then_ignore(text::newline().or_not())
+        .ignored()
+}
+
+pub fn yaml_parser<'a>() -> impl Parser<'a, &'a str, Frontmatter<'a>, ParseError<'a>> {
+    delimiter()
+        .ignore_then(front_matter_body_parser())
+        .then_ignore(text::newline().or_not())
+        .then_ignore(delimiter())
 }
