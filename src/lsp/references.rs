@@ -20,24 +20,26 @@ pub fn process_references(
     let position = params.text_document_position.position;
 
     let document = get_document!(lsp, &uri);
+    let reference_at_position = document.get_reference_at_position(position);
 
-    let Some(reference) = document.get_reference_at_position(position) else {
-        log::error!("No reference found at position {position:?}");
-        return Ok(Some(Vec::new()));
+    let mut reference_locations = if let Some(reference) = reference_at_position {
+        ReferenceCollector::new(document, &uri, reference, lsp).collect_from(&lsp.documents)
+    } else {
+        ReferenceCollector::collect_file_references(document, &uri, lsp)
     };
 
-    let mut ref_locations =
-        ReferenceCollector::new(document, &uri, reference, lsp).collect_from(&lsp.documents);
-
-    // Always put the source reference first in the list
+    // Include the hovered reference itself if requested
     if params.context.include_declaration {
-        let source_location = Location::new(uri.clone(), reference.range);
-        ref_locations.insert(0, source_location);
+        if let Some(reference) = reference_at_position {
+            let declaration_location = Location::new(uri.clone(), reference.range);
+            reference_locations.insert(0, declaration_location);
+        }
     }
 
-    Ok(Some(ref_locations))
+    Ok(Some(reference_locations))
 }
 
+/// Helper for collecting references to a specific item in the document
 struct ReferenceCollector<'a> {
     lsp: &'a Server,
     source_doc: &'a Document,
@@ -68,10 +70,48 @@ impl<'a> ReferenceCollector<'a> {
             .collect()
     }
 
+    /// Collect all references that point to the a file, regardless of header
+    fn collect_file_references(
+        source_doc: &Document,
+        source_uri: &Uri,
+        lsp: &Server,
+    ) -> Vec<Location> {
+        lsp.documents
+            .get_references_with_uri()
+            .filter_map(|(uri, reference)| {
+                // Only process links that have targets
+                if let Some(target) = reference.kind.get_target() {
+                    Self::resolve_and_check_target(source_doc, target, source_uri, lsp)
+                        .map(|_| Location::new(uri.clone(), reference.range))
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Resolve a target URI and check if it matches the source URI
+    fn resolve_and_check_target(
+        source_doc: &Document,
+        target: &str,
+        source_uri: &Uri,
+        lsp: &Server,
+    ) -> Option<()> {
+        match resolve_target_uri(source_doc, target, lsp.root()) {
+            Ok(resolved_target) if resolved_target == *source_uri => Some(()),
+            Ok(_) => None,
+            Err(err) => {
+                log::error!("Target resolution failed: {:?}", err);
+                None
+            }
+        }
+    }
+
     fn is_source_reference(&self, uri: &lsp_types::Uri, reference: &DocReference) -> bool {
         uri == self.source_uri && reference.range == self.source_ref.range
     }
 
+    /// Check if a reference matches our source reference and return its location if so
     fn check_reference_match(
         &self,
         uri: &lsp_types::Uri,
@@ -83,35 +123,38 @@ impl<'a> ReferenceCollector<'a> {
             }
             ReferenceKind::Link { header, target, .. }
             | ReferenceKind::WikiLink { header, target, .. } => {
-                let Ok(resolved_target) =
-                    resolve_target_uri(self.source_doc, target, self.lsp.root())
-                else {
-                    log::error!("Check reference resolution failed");
-                    return None;
-                };
+                // Resolve the source link's target to compare with other references
+                let resolved_target =
+                    match resolve_target_uri(self.source_doc, target, self.lsp.root()) {
+                        Ok(target) => target,
+                        Err(err) => {
+                            log::error!("Source link target resolution failed: {:?}", err);
+                            return None;
+                        }
+                    };
 
                 self.match_link_reference(uri, reference, header.as_deref(), &resolved_target)
             }
         }
     }
 
+    /// Find links that reference the given header
     fn match_header_reference(
         &self,
         uri: &lsp_types::Uri,
         reference: &DocReference,
         source_content: &str,
     ) -> Option<Location> {
-        let (link_header, link_target) = extract_link_parts(&reference.kind)?;
-        let link_header = link_header?;
+        let target = reference.kind.get_target()?;
 
-        let Ok(link_target) = resolve_target_uri(self.source_doc, link_target, self.lsp.root())
-        else {
-            log::error!("Header reference resolution failed");
-            return None;
-        };
+        Self::resolve_and_check_target(self.source_doc, target, self.source_uri, self.lsp)?;
 
-        if *uri == link_target && headers_match(source_content, link_header) {
-            Some(Location::new(uri.clone(), reference.range))
+        if let Some(link_header) = reference.kind.get_link_header() {
+            if normalized_headers_match(source_content, link_header) {
+                Some(Location::new(uri.clone(), reference.range))
+            } else {
+                None
+            }
         } else {
             None
         }
@@ -127,42 +170,62 @@ impl<'a> ReferenceCollector<'a> {
         let location = Location::new(uri.clone(), reference.range);
 
         match &reference.kind {
-            ReferenceKind::Link { header, target, .. }
-            | ReferenceKind::WikiLink { header, target, .. } => {
-                let Ok(resolved_target) =
-                    resolve_target_uri(self.source_doc, target, self.lsp.root())
-                else {
-                    log::error!("Link reference resolution failed");
-                    return None;
-                };
-
-                if *source_target == resolved_target
-                    && headers_are_compatible(source_header, header.as_deref())
-                {
-                    Some(location)
-                } else {
-                    None
-                }
-            }
-            ReferenceKind::Header { content, .. } => source_header
-                .filter(|sh| uri == source_target && headers_match(content, sh))
+            ReferenceKind::Link { .. } | ReferenceKind::WikiLink { .. } => self
+                .match_link_to_link(reference, source_header, source_target)
                 .map(|_| location),
+            ReferenceKind::Header { .. } => self
+                .match_link_to_header(reference, uri, source_header, source_target)
+                .map(|_| location),
+        }
+    }
+
+    fn match_link_to_link(
+        &self,
+        reference: &DocReference,
+        source_header: Option<&str>,
+        source_target: &lsp_types::Uri,
+    ) -> Option<()> {
+        let target = reference.kind.get_target()?;
+
+        Self::resolve_and_check_target(self.source_doc, target, source_target, self.lsp)?;
+
+        let reference_header = reference.kind.get_link_header();
+
+        if headers_are_compatible(source_header, reference_header) {
+            Some(())
+        } else {
+            None
+        }
+    }
+
+    fn match_link_to_header(
+        &self,
+        reference: &DocReference,
+        uri: &lsp_types::Uri,
+        source_header: Option<&str>,
+        source_target: &lsp_types::Uri,
+    ) -> Option<()> {
+        if uri != source_target {
+            return None;
+        }
+
+        let header_content = reference.kind.get_content()?;
+        let source_header = source_header?;
+
+        if normalized_headers_match(header_content, source_header) {
+            Some(())
+        } else {
+            None
         }
     }
 }
 
-fn headers_match(content1: &str, content2: &str) -> bool {
+// This will normalize both headers before comparing
+fn normalized_headers_match(content1: &str, content2: &str) -> bool {
     normalize_header_content(content1) == normalize_header_content(content2)
 }
 
-fn extract_link_parts(kind: &ReferenceKind) -> Option<(Option<&str>, &str)> {
-    match kind {
-        ReferenceKind::Link { header, target, .. }
-        | ReferenceKind::WikiLink { header, target, .. } => Some((header.as_deref(), target)),
-        _ => None,
-    }
-}
-
+/// Headers are compatible if they are both None or both Some and equal
 fn headers_are_compatible(h1: Option<&str>, h2: Option<&str>) -> bool {
     match (h1, h2) {
         (Some(header1), Some(header2)) => header1 == header2,
