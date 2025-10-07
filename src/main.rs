@@ -102,6 +102,11 @@ fn main() -> Result<()> {
 
     let mut lsp = Server::default();
 
+    // Load configuration from rust-markdown-lsp.toml in the current directory
+    if let Err(e) = lsp.load_config("rust-markdown-lsp.toml") {
+        log::warn!("Failed to load config: {}", e);
+    }
+
     let init_params = handle_initialize(&mut reader, &mut writer)?;
 
     lsp.load_workspaces(init_params.workspace_folders)?;

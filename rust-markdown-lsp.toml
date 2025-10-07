@@ -1,0 +1,20 @@
+# Rust Markdown LSP Configuration
+# This file configures the behavior of the Rust Markdown LSP server
+
+[server]
+# Maximum number of files to process (optional)
+# max_files = 1000
+# Enable verbose logging
+verbose = false
+
+[markdown]
+# Enable frontmatter parsing
+enable_frontmatter = true
+# Enable link validation
+validate_links = true
+
+[diagnostics]
+# Enable diagnostics for broken links
+enable_broken_links = true
+# Enable diagnostics for missing frontmatter
+enable_missing_frontmatter = false
