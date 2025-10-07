@@ -1,5 +1,6 @@
 use document::references::Reference;
 
+pub mod config;
 pub mod document;
 pub mod lsp;
 pub mod macros;

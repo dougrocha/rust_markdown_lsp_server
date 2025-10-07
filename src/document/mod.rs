@@ -11,6 +11,7 @@ pub mod references;
 #[derive(Debug, Clone)]
 pub struct Document {
     pub uri: Uri,
+    pub id: Option<i32>,
     pub version: i32,
     pub content: Rope,
     pub references: Vec<Reference>,
@@ -20,6 +21,7 @@ pub struct Document {
 impl Document {
     pub fn new(uri: Uri, content: &str, version: i32) -> Result<Self> {
         let mut s = Self {
+            id: Self::extract_id_from_uri(&uri),
             uri,
             version,
             content: Rope::from_str(content),
@@ -29,6 +31,14 @@ impl Document {
         s.parse_and_analyze()?;
 
         Ok(s)
+    }
+
+    pub fn extract_id_from_uri(uri: &Uri) -> Option<i32> {
+        let uri_str = uri.to_string();
+        let dash_index = uri_str.find('-')?;
+        let id_str = &uri_str[..dash_index];
+
+        id_str.parse::<i32>().ok()
     }
 
     pub fn update(&mut self, content: &str, version: i32) -> Result<()> {
@@ -67,6 +77,7 @@ impl Document {
         }
 
         let Some(parsed_markdown) = parsed_markdown else {
+            log::debug!("Failed to parse");
             return Ok(());
         };
 

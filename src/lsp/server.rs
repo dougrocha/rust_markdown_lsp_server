@@ -3,6 +3,7 @@ use miette::{miette, Context, IntoDiagnostic, Result};
 use std::collections::HashMap;
 
 use crate::{
+    config::Config,
     document::{references::Reference, Document},
     UriExt,
 };
@@ -58,6 +59,7 @@ impl DocumentStore {
 #[derive(Default)]
 pub struct Server {
     pub documents: DocumentStore,
+    pub config: Config,
     root: Option<Uri>,
     client_capabilities: Option<ClientCapabilities>,
 }
@@ -65,6 +67,13 @@ pub struct Server {
 impl Server {
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Load configuration from a file path
+    pub fn load_config<P: AsRef<std::path::Path>>(&mut self, config_path: P) -> Result<()> {
+        self.config = Config::from_file_or_default(config_path);
+        log::info!("Loaded configuration: {:?}", self.config);
+        Ok(())
     }
 
     pub fn set_root(&mut self, uri: Uri) {
@@ -104,10 +113,12 @@ impl Server {
                     .into_diagnostic()
                     .with_context(|| format!("Failed to read markdown file: {entry_path:?}"))?;
 
-                let uri = Uri::from_file_path(entry_path)
-                    .with_context(|| format!("Failed to create URI from path: {entry_path:?}"))?;
+                let uri = Uri::from_file_path(entry_path);
 
-                self.documents.open_document(&uri, 0, &contents)?;
+                match uri {
+                    Some(uri) => self.documents.open_document(&uri, 0, &contents)?,
+                    None => log::debug!("Failed to create URI from path: {:?}", entry_path),
+                }
             }
         }
         Ok(())
