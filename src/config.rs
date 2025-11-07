@@ -12,6 +12,8 @@ pub struct Config {
     pub markdown: MarkdownConfig,
     /// Diagnostics settings
     pub diagnostics: DiagnosticsConfig,
+    /// Link resolution settings
+    pub links: LinkConfig,
 }
 
 /// Server-specific configuration
@@ -41,6 +43,36 @@ impl Default for MarkdownConfig {
     }
 }
 
+/// Link resolution configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LinkConfig {
+    /// Enable filename-based link resolution
+    /// When true, [[note]] or [[note.md]] will search for note.md anywhere in workspace
+    pub enable_filename_resolution: bool,
+    /// When generating links in completions/actions, which style to use
+    pub generation_style: LinkGenerationStyle,
+}
+
+impl Default for LinkConfig {
+    fn default() -> Self {
+        Self {
+            enable_filename_resolution: true,
+            generation_style: LinkGenerationStyle::Filename,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum LinkGenerationStyle {
+    /// Generate links using just filename: [[note]]
+    Filename,
+    /// Generate links using relative paths: [[./folder/note.md]]
+    Relative,
+    /// Generate links using absolute paths: [[/docs/note.md]]
+    Absolute,
+}
+
 /// Diagnostics configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DiagnosticsConfig {
@@ -60,6 +92,20 @@ impl Default for DiagnosticsConfig {
 }
 
 impl Config {
+    pub fn new(
+        server: ServerConfig,
+        markdown: MarkdownConfig,
+        diagnostics: DiagnosticsConfig,
+        links: LinkConfig,
+    ) -> Self {
+        Self {
+            server,
+            markdown,
+            diagnostics,
+            links,
+        }
+    }
+
     /// Load configuration from a TOML file
     pub fn from_file<P: AsRef<Path>>(path: P) -> Result<Self> {
         let contents = fs::read_to_string(&path)

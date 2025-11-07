@@ -44,7 +44,7 @@ fn find_definition<'a>(
     target: &str,
     header: Option<&str>,
 ) -> Result<(&'a Document, Range)> {
-    let file_path = resolve_target_uri(document, target, lsp.root())?;
+    let file_path = resolve_target_uri(lsp, document, target)?;
 
     let document = get_document!(lsp, &file_path);
 

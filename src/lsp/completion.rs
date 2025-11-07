@@ -1,8 +1,6 @@
-use std::str::FromStr;
-
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionParams,
-    CompletionResponse, CompletionTriggerKind, Documentation, Uri,
+    CompletionResponse, CompletionTriggerKind, Documentation,
 };
 use miette::{Context, Result};
 
@@ -10,7 +8,6 @@ use crate::{
     document::{references::ReferenceKind, Document},
     get_document,
     lsp::helpers::normalize_header_content,
-    path::{combine_and_normalize, find_relative_path},
     TextBufferConversions,
 };
 
@@ -79,30 +76,40 @@ fn handle_trigger_completion(
     if let Some(trigger_context) = slice.get_byte_slice(byte_pos.saturating_sub(2)..byte_pos) {
         if trigger_context == "[[" || trigger_context == "](" {
             let is_wiki_link = trigger_context == "[[";
+
             for doc in lsp.documents.get_documents() {
-                let Ok(relative_path) = find_relative_path(&document.uri, &doc.uri) else {
-                    continue;
+                // Generate link text based on config
+                let link_text = match super::helpers::generate_link_text(
+                    &lsp.config.links,
+                    &document.uri,
+                    &doc.uri,
+                    lsp.root(),
+                ) {
+                    Ok(text) => text,
+                    Err(e) => {
+                        log::warn!("Failed to generate link text: {}", e);
+                        continue;
+                    }
                 };
 
-                // Handle spaces in path
-                let display_path = relative_path.clone();
-                let insert_path = if relative_path.contains(' ') {
+                // Handle spaces in generated text
+                let insert_text = if link_text.contains(' ') {
                     if is_wiki_link {
-                        relative_path // Wiki links can handle spaces
+                        link_text.clone() // Wiki links handle spaces
                     } else {
-                        relative_path.replace(' ', "%20") // URL encode spaces for markdown links
+                        link_text.replace(' ', "%20") // URL encode for markdown links
                     }
                 } else {
-                    relative_path
+                    link_text.clone()
                 };
 
-                // Create completion with proper text edit
-                let text_edit = if is_wiki_link {
-                    format!("{insert_path}]]")
+                // Add closing characters
+                let completion_text = if is_wiki_link {
+                    format!("{insert_text}]]")
                 } else {
                     format!(
                         "{}{}",
-                        insert_path,
+                        insert_text,
                         if byte_pos == slice.len_bytes() {
                             ")"
                         } else {
@@ -112,12 +119,12 @@ fn handle_trigger_completion(
                 };
 
                 completions.push(CompletionItem {
-                    label: display_path.clone(),
+                    label: link_text.clone(),
                     kind: Some(CompletionItemKind::FILE),
                     detail: Some("Document".to_owned()),
                     documentation: Some(Documentation::String(format!(
                         "Preview of {}:\n\n```markdown\n{}\n```",
-                        display_path,
+                        link_text,
                         doc.content
                             .to_string()
                             .lines()
@@ -125,7 +132,7 @@ fn handle_trigger_completion(
                             .collect::<Vec<_>>()
                             .join("\n")
                     ))),
-                    insert_text: Some(text_edit),
+                    insert_text: Some(completion_text),
                     ..Default::default()
                 });
             }
@@ -140,8 +147,16 @@ fn handle_trigger_completion(
         if trigger_context == "#" {
             let (file_path, is_wiki_link) =
                 extract_file_and_link_type_from_context(document, byte_pos)?;
-            let file_uri_path = Uri::from_str(&file_path).ok()?;
-            let file_uri = combine_and_normalize(&document.uri, &file_uri_path).ok()?;
+
+            // Use new resolver
+            let file_uri = super::link_resolver::resolve_link(
+                &file_path,
+                document,
+                &lsp.config.links,
+                &lsp.documents,
+                lsp.root(),
+            )
+            .ok()?;
 
             let ref_doc = lsp
                 .documents
