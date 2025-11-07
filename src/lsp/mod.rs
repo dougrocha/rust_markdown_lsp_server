@@ -10,4 +10,5 @@ pub mod server;
 pub mod completion;
 pub mod diagnostics;
 mod helpers;
+pub mod link_resolver;
 pub mod references;

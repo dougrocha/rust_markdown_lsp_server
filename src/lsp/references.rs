@@ -81,7 +81,7 @@ impl<'a> ReferenceCollector<'a> {
             .filter_map(|(uri, reference)| {
                 // Only process links that have targets
                 if let Some(target) = reference.kind.get_target() {
-                    Self::resolve_and_check_target(source_doc, target, source_uri, lsp)
+                    Self::resolve_and_check_target(lsp, source_doc, target, source_uri)
                         .map(|_| Location::new(uri.clone(), reference.range))
                 } else {
                     None
@@ -92,12 +92,12 @@ impl<'a> ReferenceCollector<'a> {
 
     /// Resolve a target URI and check if it matches the source URI
     fn resolve_and_check_target(
+        lsp: &Server,
         source_doc: &Document,
         target: &str,
         source_uri: &Uri,
-        lsp: &Server,
     ) -> Option<()> {
-        match resolve_target_uri(source_doc, target, lsp.root()) {
+        match resolve_target_uri(lsp, source_doc, target) {
             Ok(resolved_target) if resolved_target == *source_uri => Some(()),
             Ok(_) => None,
             Err(err) => {
@@ -125,7 +125,7 @@ impl<'a> ReferenceCollector<'a> {
             | ReferenceKind::WikiLink { header, target, .. } => {
                 // Resolve the source link's target to compare with other references
                 let resolved_target =
-                    match resolve_target_uri(self.source_doc, target, self.lsp.root()) {
+                    match resolve_target_uri(self.lsp, self.source_doc, target) {
                         Ok(target) => target,
                         Err(err) => {
                             log::error!("Source link target resolution failed: {:?}", err);
@@ -147,7 +147,7 @@ impl<'a> ReferenceCollector<'a> {
     ) -> Option<Location> {
         let target = reference.kind.get_target()?;
 
-        Self::resolve_and_check_target(self.source_doc, target, self.source_uri, self.lsp)?;
+        Self::resolve_and_check_target(self.lsp, self.source_doc, target, self.source_uri)?;
 
         if let Some(link_header) = reference.kind.get_link_header() {
             if normalized_headers_match(source_content, link_header) {
@@ -187,7 +187,7 @@ impl<'a> ReferenceCollector<'a> {
     ) -> Option<()> {
         let target = reference.kind.get_target()?;
 
-        Self::resolve_and_check_target(self.source_doc, target, source_target, self.lsp)?;
+        Self::resolve_and_check_target(self.lsp, self.source_doc, target, source_target)?;
 
         let reference_header = reference.kind.get_link_header();
 

@@ -12,30 +12,26 @@ use crate::{
     Reference, TextBufferConversions, UriExt,
 };
 
-/// Resolves a target path (absolute or relative) to a URI.
+/// Resolves a target path to a URI using configured link resolution strategy.
 ///
-/// - Absolute paths (starting with "/") are resolved relative to the workspace root
-/// - Relative paths are resolved relative to the current document
-pub fn resolve_target_uri(document: &Document, target: &str, root: Option<&Uri>) -> Result<Uri> {
-    if target.starts_with('/') {
-        // Absolute path - resolve relative to workspace root
-        if let Some(root) = root {
-            let root_path = root
-                .to_file_path()
-                .ok_or_else(|| miette!("Failed to convert workspace root to file path"))?;
-            let target_path = root_path.join(target.strip_prefix('/').unwrap_or(target));
-            Uri::from_file_path(target_path)
-                .ok_or_else(|| miette!("Failed to create URI from absolute path"))
-        } else {
-            Err(miette!(
-                "No workspace root available for absolute path resolution"
-            ))
-        }
-    } else {
-        let target_uri = Uri::from_str(target).into_diagnostic()?;
-        // Relative path - resolve relative to current document
-        combine_and_normalize(&document.uri, &target_uri)
-    }
+/// This now supports:
+/// - Filename-based resolution: "note" finds note.md anywhere in workspace
+/// - Relative paths: "./folder/note.md"
+/// - Absolute paths: "/docs/note.md" (from workspace root)
+pub fn resolve_target_uri(
+    lsp: &Server,
+    document: &Document,
+    target: &str,
+) -> Result<Uri> {
+    use super::link_resolver;
+    
+    link_resolver::resolve_link(
+        target,
+        document,
+        &lsp.config.links,
+        &lsp.documents,
+        lsp.root(),
+    )
 }
 
 /// Normalizes header content to match the format used in completions
@@ -61,7 +57,7 @@ pub fn get_content(
     target: &str,
     header: Option<&str>,
 ) -> Result<String> {
-    let file_path = resolve_target_uri(document, target, lsp.root())?;
+    let file_path = resolve_target_uri(lsp, document, target)?;
 
     let document = get_document!(&lsp, &file_path);
 
@@ -78,6 +74,55 @@ pub fn get_content(
         Some(content) => Ok(content.to_string()),
         None => Ok(slice.to_string()),
     }
+}
+
+/// Generate link text for a target document based on configuration
+pub fn generate_link_text(
+    config: &crate::config::LinkConfig,
+    source_uri: &Uri,
+    target_uri: &Uri,
+    workspace_root: Option<&Uri>,
+) -> Result<String> {
+    use crate::config::LinkGenerationStyle;
+    use crate::path::find_relative_path;
+    use super::link_resolver::extract_filename_stem;
+    
+    match config.generation_style {
+        LinkGenerationStyle::Filename => {
+            // Always use stem (no .md extension) for filename-based links
+            let filename = extract_filename_stem(target_uri)
+                .ok_or_else(|| miette!("Failed to extract filename from URI"))?;
+            Ok(filename)
+        }
+        LinkGenerationStyle::Relative => {
+            find_relative_path(source_uri, target_uri)
+        }
+        LinkGenerationStyle::Absolute => {
+            if let Some(root) = workspace_root {
+                generate_absolute_path(root, target_uri)
+            } else {
+                // Fallback to relative if no workspace root
+                find_relative_path(source_uri, target_uri)
+            }
+        }
+    }
+}
+
+/// Generate absolute path from workspace root
+fn generate_absolute_path(root: &Uri, target: &Uri) -> Result<String> {
+    let root_path = root
+        .to_file_path()
+        .ok_or_else(|| miette!("Failed to convert root to path"))?;
+    
+    let target_path = target
+        .to_file_path()
+        .ok_or_else(|| miette!("Failed to convert target to path"))?;
+    
+    let relative = target_path
+        .strip_prefix(&root_path)
+        .map_err(|_| miette!("Target is not within workspace root"))?;
+    
+    Ok(format!("/{}", relative.to_string_lossy()))
 }
 
 /// Extracts the content of a header section from the provided references.
@@ -262,14 +307,14 @@ mod tests {
         let document = Document::new(document_uri.clone(), "# Test", 1).unwrap();
 
         // Test absolute path resolution
-        let result = resolve_target_uri(&document, "/AGENTS.md", server.root());
+        let result = resolve_target_uri(&server, &document, "/AGENTS.md");
         assert!(result.is_ok(), "Should resolve absolute path");
         let resolved_uri = result.unwrap();
         assert_eq!(resolved_uri.as_str(), "file:///workspace/AGENTS.md");
 
         // Test relative path resolution (this will fail in test environment due to file system access)
         // but we can verify the function signature works
-        let result = resolve_target_uri(&document, "./relative.md", server.root());
+        let result = resolve_target_uri(&server, &document, "./relative.md");
         // We expect this to fail in test environment, but the function should be callable
         assert!(
             result.is_err(),

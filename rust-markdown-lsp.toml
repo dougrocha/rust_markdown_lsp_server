@@ -18,3 +18,13 @@ validate_links = true
 enable_broken_links = true
 # Enable diagnostics for missing frontmatter
 enable_missing_frontmatter = false
+
+[links]
+# Enable filename-based link resolution
+# When true, [[note]] or [[note.md]] will find note.md anywhere in workspace
+# Extensions are automatically handled - both work the same way
+enable_filename_resolution = true
+
+# Style for generating links in completions and code actions
+# Options: "filename", "relative", "absolute"
+generation_style = "filename"

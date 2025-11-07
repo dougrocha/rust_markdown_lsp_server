@@ -87,9 +87,15 @@ fn handle_non_range(
                             version: None,
                         },
                         edits: vec![OneOf::Left(TextEdit::new(range, {
-                            let relative_path = find_relative_path(uri, &new_file_uri)
-                                .unwrap_or_else(|_| new_file_uri.to_string());
-                            format!("[{content}]({relative_path})\n\n")
+                            // Use configured link generation style
+                            let link_text = super::helpers::generate_link_text(
+                                &lsp.config.links,
+                                uri,
+                                &new_file_uri,
+                                lsp.root(),
+                            ).unwrap_or_else(|_| new_file_uri.to_string());
+                            
+                            format!("[{content}]({link_text})\n\n")
                         }))],
                     }),
                 ]);
