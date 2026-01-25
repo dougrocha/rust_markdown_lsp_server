@@ -18,25 +18,19 @@ Currently, this server supports:
 
 ## Implemented Features
 
-- [ ] Proper document syncing (consider trying incremental sync)
-- [x] `textDocument/codeAction`
-  - Shows a preview of linked documents on hover
-  - [x] Wiki-links
-  - [x] Regular links
-- [x] `textDocument/definition`
-- [x] `textDocument/references`
-  - References for headings
-  - Link notes Zettelkasten-style
-- [ ] `textDocument/rename`
-  - Rename files and headers
-- [x] `textDocument/codeAction`
-  - Extract sections
-  - [ ] Bring in a section
-- [ ] `textDocument/publishDiagnostics`
-  - Show errors not detected by diagnostics
-  - Currently half working, will depend on my parser
-- [x] `textDocument/completion`
-  - Also half working, wondering if I should sort them server side
+- [x] `textDocument/hover` - Preview linked documents on hover (wiki-links & regular links)
+- [x] `textDocument/definition` - Navigate to target files and headers
+- [x] `textDocument/references` - Find all references to files and headers
+- [x] `textDocument/completion` - Autocomplete for `[[`, `](`, and `#` (headers)
+- [x] `textDocument/codeAction` - Extract header sections to new files
+- [x] `textDocument/publishDiagnostics` - Report parser errors (partial)
+- [ ] `textDocument/rename` - Rename files/headers and update all references
+- [ ] `textDocument/documentSymbol` - Document outline with headers and links
+- [ ] `textDocument/workspaceSymbol` - Search symbols across workspace
+- [ ] `textDocument/formatting` - Format markdown documents
+- [ ] Proper document syncing (incremental sync instead of full sync)
+- [ ] Broken link validation (configured but not active)
+- [ ] Missing frontmatter validation (configured but not active)
 
 ---
 
