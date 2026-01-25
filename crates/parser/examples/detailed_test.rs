@@ -1,9 +1,9 @@
 use chumsky::Parser;
-use parser::{markdown_parser, MarkdownNode, InlineMarkdownNode};
+use parser::{markdown_parser, InlineMarkdownNode, MarkdownNode};
 
 fn main() {
     println!("=== Testing what unsupported markdown becomes ===\n");
-    
+
     // Test code block
     let input = "# Header\n\n```rust\nfn main() {}\n```\n\nParagraph after";
     let result = markdown_parser().parse(input).into_output_errors();
@@ -15,18 +15,39 @@ fn main() {
                     println!("  [{}] Header({}): '{}'", i, level, content);
                 }
                 MarkdownNode::Paragraph(inlines) => {
-                    println!("  [{}] Paragraph with {} inline elements:", i, inlines.len());
+                    println!(
+                        "  [{}] Paragraph with {} inline elements:",
+                        i,
+                        inlines.len()
+                    );
                     for (j, inline) in inlines.iter().enumerate() {
                         match &inline.0 {
                             InlineMarkdownNode::PlainText(text) => {
-                                println!("      [{}] PlainText: '{}'", j, text.replace("\n", "\\n"));
+                                println!(
+                                    "      [{}] PlainText: '{}'",
+                                    j,
+                                    text.replace("\n", "\\n")
+                                );
                             }
                             other => println!("      [{}] {:?}", j, other),
                         }
                     }
                 }
-                MarkdownNode::FootnoteDefinition { id, content } => {
+                MarkdownNode::FootnoteDefinition { id, content: _ } => {
                     println!("  [{}] FootnoteDefinition({})", i, id);
+                }
+                MarkdownNode::ListItem { checkbox, content } => {
+                    let checkbox_str = match checkbox {
+                        Some(true) => "[x]",
+                        Some(false) => "[ ]",
+                        None => "   ",
+                    };
+                    println!(
+                        "  [{}] ListItem {} with {} inline elements",
+                        i,
+                        checkbox_str,
+                        content.len()
+                    );
                 }
                 MarkdownNode::Invalid => {
                     println!("  [{}] Invalid", i);
@@ -35,7 +56,7 @@ fn main() {
         }
     }
     println!("  Errors: {}\n", result.1.len());
-    
+
     // Test list
     let input2 = "# Header\n\n- Item 1\n- Item 2\n- Item 3";
     let result2 = markdown_parser().parse(input2).into_output_errors();
@@ -47,11 +68,19 @@ fn main() {
                     println!("  [{}] Header({}): '{}'", i, level, content);
                 }
                 MarkdownNode::Paragraph(inlines) => {
-                    println!("  [{}] Paragraph with {} inline elements:", i, inlines.len());
+                    println!(
+                        "  [{}] Paragraph with {} inline elements:",
+                        i,
+                        inlines.len()
+                    );
                     for (j, inline) in inlines.iter().enumerate() {
                         match &inline.0 {
                             InlineMarkdownNode::PlainText(text) => {
-                                println!("      [{}] PlainText: '{}'", j, text.replace("\n", "\\n"));
+                                println!(
+                                    "      [{}] PlainText: '{}'",
+                                    j,
+                                    text.replace("\n", "\\n")
+                                );
                             }
                             other => println!("      [{}] {:?}", j, other),
                         }
@@ -62,7 +91,7 @@ fn main() {
         }
     }
     println!("  Errors: {}\n", result2.1.len());
-    
+
     // Test blockquote
     let input3 = "# Header\n\n> This is a quote\n> Multiple lines";
     let result3 = markdown_parser().parse(input3).into_output_errors();
@@ -74,11 +103,19 @@ fn main() {
                     println!("  [{}] Header({}): '{}'", i, level, content);
                 }
                 MarkdownNode::Paragraph(inlines) => {
-                    println!("  [{}] Paragraph with {} inline elements:", i, inlines.len());
+                    println!(
+                        "  [{}] Paragraph with {} inline elements:",
+                        i,
+                        inlines.len()
+                    );
                     for (j, inline) in inlines.iter().enumerate() {
                         match &inline.0 {
                             InlineMarkdownNode::PlainText(text) => {
-                                println!("      [{}] PlainText: '{}'", j, text.replace("\n", "\\n"));
+                                println!(
+                                    "      [{}] PlainText: '{}'",
+                                    j,
+                                    text.replace("\n", "\\n")
+                                );
                             }
                             other => println!("      [{}] {:?}", j, other),
                         }
@@ -89,7 +126,7 @@ fn main() {
         }
     }
     println!("  Errors: {}\n", result3.1.len());
-    
+
     // Test table
     let input4 = "# Header\n\n| Col1 | Col2 |\n|------|------|\n| A    | B    |";
     let result4 = markdown_parser().parse(input4).into_output_errors();
@@ -101,7 +138,11 @@ fn main() {
                     println!("  [{}] Header({}): '{}'", i, level, content);
                 }
                 MarkdownNode::Paragraph(inlines) => {
-                    println!("  [{}] Paragraph with {} inline elements:", i, inlines.len());
+                    println!(
+                        "  [{}] Paragraph with {} inline elements:",
+                        i,
+                        inlines.len()
+                    );
                     for (j, inline) in inlines.iter().enumerate() {
                         match &inline.0 {
                             InlineMarkdownNode::PlainText(text) => {
@@ -110,7 +151,11 @@ fn main() {
                                 } else {
                                     text.to_string()
                                 };
-                                println!("      [{}] PlainText: '{}'", j, preview.replace("\n", "\\n"));
+                                println!(
+                                    "      [{}] PlainText: '{}'",
+                                    j,
+                                    preview.replace("\n", "\\n")
+                                );
                             }
                             other => println!("      [{}] {:?}", j, other),
                         }

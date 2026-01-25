@@ -242,6 +242,42 @@ pub fn plain_text_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a
         .labelled("Plain Text")
 }
 
+// Line-bounded plain text parser for use in list items (stops at single newline)
+pub fn line_plain_text_parser<'a>(
+) -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
+    let stop_condition = choice((
+        just("#"),
+        just("["),
+        just("[^"),
+        just("[["),
+        just("!["),
+        just("\n"),
+    ))
+    .rewind();
+
+    any()
+        .and_is(stop_condition.not())
+        .repeated()
+        .at_least(1)
+        .to_slice()
+        .map(InlineMarkdownNode::PlainText)
+        .labelled("Plain Text")
+}
+
+// Line-bounded inline parser for use in list items
+pub fn line_inline_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>>
+{
+    choice((
+        tag_parser(),
+        image_parser(),
+        wikilink_parser(),
+        footnote_parser(),
+        link_parser(),
+        line_plain_text_parser(),
+    ))
+    .labelled("Line Inline Parser")
+}
+
 pub fn inline_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
     choice((
         tag_parser(),
@@ -252,6 +288,39 @@ pub fn inline_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, P
         plain_text_parser(),
     ))
     .labelled("Inline Parser")
+}
+
+pub fn list_item_parser<'a>() -> impl Parser<'a, &'a str, MarkdownNode<'a>, ParseError<'a>> {
+    let marker = choice((just('-'), just('*')))
+        .then_ignore(text::inline_whitespace())
+        .labelled("list marker");
+
+    let checkbox = just('[')
+        .ignore_then(choice((
+            just(' ').to(Some(false)),
+            just('x').to(Some(true)),
+            just('X').to(Some(true)),
+        )))
+        .then_ignore(just(']'))
+        .then_ignore(text::inline_whitespace())
+        .or_not()
+        .labelled("checkbox");
+
+    // Use line_inline_parser to prevent consuming across newlines
+    let content = line_inline_parser()
+        .map_with(|inline_block, e| Spanned(inline_block, e.span()))
+        .repeated()
+        .at_least(1)
+        .collect();
+
+    marker
+        .ignore_then(checkbox)
+        .then(content)
+        .map(|(checkbox, content)| MarkdownNode::ListItem {
+            checkbox: checkbox.flatten(),
+            content,
+        })
+        .labelled("List Item")
 }
 
 pub fn paragraph_parser<'a>() -> impl Parser<'a, &'a str, MarkdownNode<'a>, ParseError<'a>> {

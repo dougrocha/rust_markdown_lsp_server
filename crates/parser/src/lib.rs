@@ -1,6 +1,6 @@
 use chumsky::prelude::*;
 
-use markdown::{footnote_definition_parser, header_parser, paragraph_parser};
+use markdown::{footnote_definition_parser, header_parser, list_item_parser, paragraph_parser};
 use yaml::{yaml_parser, Frontmatter};
 
 pub use chumsky::Parser;
@@ -39,6 +39,10 @@ pub enum MarkdownNode<'a> {
         id: &'a str,
         content: MarkdownText<'a>,
     },
+    ListItem {
+        checkbox: Option<bool>,
+        content: MarkdownText<'a>,
+    },
     Invalid,
 }
 
@@ -72,6 +76,7 @@ pub fn markdown_parser<'a>() -> impl Parser<'a, &'a str, ParsedMarkdown<'a>, Par
             choice((
                 header_parser(),
                 footnote_definition_parser(),
+                list_item_parser(),
                 paragraph_parser(),
             ))
             .recover_with(skip_until(

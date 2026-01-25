@@ -62,7 +62,6 @@ impl Document {
 
         let (parsed_markdown, errors) = markdown_parser().parse(&input).into_output_errors();
         for err in errors {
-            // TODO: Add to diagnostics
             self.diagnostics.push(Diagnostic {
                 range: self.byte_to_lsp_range(&err.span().into_range()),
                 severity: Some(DiagnosticSeverity::WARNING),
@@ -97,6 +96,47 @@ impl Document {
                 }
                 MarkdownNode::Paragraph(inlines) => {
                     for inline in inlines {
+                        let Spanned(inline_markdown, inline_span) = inline;
+
+                        if let InlineMarkdownNode::Link(link) = inline_markdown {
+                            match link {
+                                LinkType::InlineLink { text, uri, header } => {
+                                    let reference = Reference {
+                                        kind: ReferenceKind::Link {
+                                            target: uri.to_string(),
+                                            alt_text: text.to_string(),
+                                            title: None,
+                                            header: header.map(|x| x.to_string()),
+                                        },
+                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                    };
+                                    self.references.push(reference);
+                                }
+                                LinkType::WikiLink {
+                                    target,
+                                    display_text,
+                                    header,
+                                } => {
+                                    let reference = Reference {
+                                        kind: ReferenceKind::WikiLink {
+                                            target: target.to_string(),
+                                            alias: display_text.map(|d| d.to_string()),
+                                            header: header.map(|x| x.to_string()),
+                                        },
+                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                    };
+                                    self.references.push(reference);
+                                }
+                            }
+                        }
+                    }
+                }
+                MarkdownNode::ListItem {
+                    checkbox: _,
+                    content,
+                } => {
+                    // Process links inside list item content (same as paragraph)
+                    for inline in content {
                         let Spanned(inline_markdown, inline_span) = inline;
 
                         if let InlineMarkdownNode::Link(link) = inline_markdown {

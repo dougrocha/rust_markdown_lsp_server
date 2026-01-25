@@ -6,7 +6,7 @@ mod common;
 
 #[test]
 fn test_header_parser() {
-    let input = "# Header Text\n";
+    let input = "# Header Text";
     let expected = MarkdownNode::Header {
         level: 1,
         content: "Header Text",
