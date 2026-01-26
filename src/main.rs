@@ -44,59 +44,6 @@ fn main() -> Result<()> {
         fs::File::create(log_path.join("log.txt")).expect("Failed to create log file: {log_path}"),
     );
 
-    // let test_file = std::fs::read_to_string("test.md").unwrap();
-    // let (output, errors) = parser::markdown_parser()
-    //     .parse(&test_file)
-    //     .into_output_errors();
-    // println!(
-    //     "Parsed frontmatter: {:#?}",
-    //     output.clone().unwrap().frontmatter
-    // );
-    // let document = rust_markdown_lsp::document::Document::new(
-    //     Uri::from_str("./test.md").unwrap(),
-    //     &test_file,
-    //     0,
-    // )?;
-    // for err in errors {
-    //     println!(
-    //         "{:#?} - {:?}",
-    //         err,
-    //         document.byte_to_lsp_range(&err.span().into_range())
-    //     );
-    // }
-    //
-
-    // for el in output.unwrap().body {
-    //     match el.0 {
-    //         parser::MarkdownNode::Header { level, content: _ } => {
-    //             println!(
-    //                 "Header: \t{:?}\n \tSpan: {:?}\n \t{:?}\n",
-    //                 level,
-    //                 el.1,
-    //                 document.byte_to_lsp_range(&el.1.into_range())
-    //             );
-    //         }
-    //         parser::MarkdownNode::Paragraph(spanneds) => {
-    //             for Spanned(inel, span) in spanneds {
-    //                 match inel {
-    //                     parser::InlineMarkdownNode::Link(link_type) => {
-    //                         println!(
-    //                             "Link: \t{:?}\n \tSpan: {:?}\n \t{:?}\n",
-    //                             link_type,
-    //                             span,
-    //                             document.byte_to_lsp_range(&span.into_range())
-    //                         );
-    //                     }
-    //                     _ => {}
-    //                 }
-    //             }
-    //         }
-    //         _ => {}
-    //     }
-    // }
-    //
-    // return Ok(());
-
     let (stdin, stdout) = (io::stdin(), io::stdout());
     let (mut reader, mut writer) = (stdin.lock(), stdout.lock());
 
