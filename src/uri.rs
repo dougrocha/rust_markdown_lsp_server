@@ -56,7 +56,7 @@ pub trait UriExt: Sized + sealed::Sealed {
     /// responsibility to check the URL’s scheme before calling this.
     ///
     /// e.g. `Uri("file:///etc/passwd")` becomes `PathBuf("/etc/passwd")`
-    fn to_file_path(&self) -> Option<Cow<Path>>;
+    fn to_file_path(&self) -> Option<Cow<'_, Path>>;
 
     /// Convert a file path to a [`lsp_types::Uri`].
     ///
@@ -69,7 +69,7 @@ pub trait UriExt: Sized + sealed::Sealed {
 impl sealed::Sealed for lsp_types::Uri {}
 
 impl UriExt for lsp_types::Uri {
-    fn to_file_path(&self) -> Option<Cow<Path>> {
+    fn to_file_path(&self) -> Option<Cow<'_, Path>> {
         let path = match self.path().as_estr().decode().into_string_lossy() {
             Cow::Borrowed(ref_) => Cow::Borrowed(Path::new(ref_)),
             Cow::Owned(owned) => Cow::Owned(PathBuf::from(owned)),
