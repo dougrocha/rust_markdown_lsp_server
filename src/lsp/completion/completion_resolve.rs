@@ -1,0 +1,16 @@
+use miette::Result;
+
+use lsp_types::CompletionItem;
+
+use super::super::server::Server;
+
+pub fn process_completion_resolve(
+    _lsp: &mut Server,
+    item: CompletionItem,
+) -> Result<CompletionItem> {
+    // log::debug!("Completion Resolve {:#?}", item);
+    Ok(CompletionItem {
+        label: item.label,
+        ..Default::default()
+    })
+}

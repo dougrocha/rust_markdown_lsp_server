@@ -17,7 +17,9 @@ use rust_markdown_lsp::{
     dispatch_lsp_request,
     lsp::{
         code_action::process_code_action,
-        completion::{process_completion, process_completion_resolve},
+        completion::{
+            completion::process_completion, completion_resolve::process_completion_resolve,
+        },
         diagnostics::process_diagnostic,
         did_change::process_did_change,
         did_open::process_did_open,
