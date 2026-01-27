@@ -2,7 +2,7 @@ use std::ops::Range;
 
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Uri};
 use miette::Result;
-use parser::{markdown_parser, InlineMarkdownNode, LinkType, MarkdownNode, Parser, Spanned};
+use parser::{InlineMarkdownNode, LinkType, MarkdownNode, Parser, Spanned, markdown_parser};
 use references::{Reference, ReferenceKind};
 use ropey::Rope;
 

@@ -1,8 +1,9 @@
-use crate::{document::references::ReferenceKind, get_document, lsp::server::Server};
+use core::{document::references::ReferenceKind, get_document};
+
 use lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind};
 use miette::{Context, Result};
 
-use super::helpers;
+use crate::{helpers::get_content, server::Server};
 
 pub fn process_hover(lsp: &mut Server, params: HoverParams) -> Result<Option<Hover>> {
     let uri = params.text_document_position_params.text_document.uri;
@@ -16,7 +17,7 @@ pub fn process_hover(lsp: &mut Server, params: HoverParams) -> Result<Option<Hov
         Some(reference) => match &reference.kind {
             ReferenceKind::Link { target, header, .. }
             | ReferenceKind::WikiLink { target, header, .. } => {
-                let contents = helpers::get_content(lsp, document, target, header.as_deref())?;
+                let contents = get_content(lsp, document, target, header.as_deref())?;
                 Ok(Some(Hover {
                     contents: HoverContents::Markup(MarkupContent {
                         kind: MarkupKind::Markdown,

@@ -4,9 +4,9 @@ use lsp_types::{
 };
 use miette::{Context, Result};
 
-use crate::get_document;
+use core::get_document;
 
-use super::server::Server;
+use crate::server::Server;
 
 pub fn process_diagnostic(
     lsp: &mut Server,

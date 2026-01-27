@@ -7,7 +7,7 @@ use lsp_types::{
 };
 use miette::{IntoDiagnostic, Result};
 
-use crate::message::{Request, Response};
+use crate::messages::{Request, Response};
 
 pub fn process_initialize(request: Request) -> Result<(Response, InitializeParams)> {
     let initialize_params: InitializeParams =

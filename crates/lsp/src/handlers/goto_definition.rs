@@ -1,13 +1,15 @@
-use crate::{
-    document::{references::ReferenceKind, Document},
+use core::{
+    document::{Document, references::ReferenceKind},
     get_document,
-    lsp::{
-        helpers::{normalize_header_content, resolve_target_uri},
-        server::Server,
-    },
 };
+
 use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range};
 use miette::{Context, Result};
+
+use crate::{
+    helpers::{normalize_header_content, resolve_target_uri},
+    server::Server,
+};
 
 pub fn process_goto_definition(
     lsp: &mut Server,
@@ -55,7 +57,7 @@ fn find_definition<'a>(
             }
 
             let target_header = header.unwrap();
-            let target_content = target_header.strip_prefix('#').unwrap_or(&target_header);
+            let target_content = target_header.strip_prefix('#').unwrap_or(target_header);
 
             // Try multiple matching strategies:
             // 1. Exact match

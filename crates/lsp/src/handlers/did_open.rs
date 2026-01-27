@@ -2,9 +2,7 @@ use lsp_types::TextDocumentItem;
 use miette::Result;
 use serde::Deserialize;
 
-use crate::message::Notification;
-
-use super::server::Server;
+use crate::{messages::Notification, server::Server};
 
 #[derive(Deserialize, Debug)]
 #[serde(rename_all = "camelCase")]

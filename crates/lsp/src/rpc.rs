@@ -1,8 +1,8 @@
 use std::io::{BufRead, Write};
 
-use miette::{miette, Context, IntoDiagnostic, Result};
+use miette::{Context, IntoDiagnostic, Result, miette};
 
-use crate::message::Message;
+use crate::messages::Message;
 
 pub fn encode_message<T: serde::Serialize>(msg: T) -> Result<String> {
     let result_str = serde_json::to_string(&msg)

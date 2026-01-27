@@ -1,3 +1,9 @@
+use core::{
+    document::{Document, references::ReferenceKind},
+    get_document,
+    text_buffer_conversions::TextBufferConversions,
+};
+
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionParams,
     CompletionResponse, CompletionTriggerKind, Documentation,
@@ -5,15 +11,12 @@ use lsp_types::{
 use miette::{Context, Result};
 
 use crate::{
-    document::{references::ReferenceKind, Document},
-    get_document,
-    lsp::{
-        helpers::{self, normalize_header_content},
-        link_resolver,
-        server::Server,
-    },
-    TextBufferConversions,
+    handlers::link_resolver,
+    helpers::{self, normalize_header_content},
+    server::Server,
 };
+
+pub mod completion_resolve;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
 enum LinkType {
@@ -99,16 +102,16 @@ fn handle_trigger_completion(
         slice.get_byte_slice(byte_pos.saturating_sub(4)..byte_pos)
     );
 
-    if let Some(trigger_context) = slice.get_byte_slice(byte_pos.saturating_sub(2)..byte_pos) {
-        if trigger_context == "[[" || trigger_context == "](" {
-            let link_type = if trigger_context == "[[" {
-                LinkType::WikiLink
-            } else {
-                LinkType::MarkdownLink
-            };
+    if let Some(trigger_context) = slice.get_byte_slice(byte_pos.saturating_sub(2)..byte_pos)
+        && (trigger_context == "[[" || trigger_context == "](")
+    {
+        let link_type = if trigger_context == "[[" {
+            LinkType::WikiLink
+        } else {
+            LinkType::MarkdownLink
+        };
 
-            return complete_document_links(lsp, document, &slice, byte_pos, link_type);
-        }
+        return complete_document_links(lsp, document, &slice, byte_pos, link_type);
     }
 
     if let Some(trigger_context) = slice.get_byte_slice(byte_pos.saturating_sub(1)..byte_pos) {

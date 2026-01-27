@@ -3,7 +3,7 @@ use parser::{markdown_parser, yaml::Yaml};
 
 fn main() {
     println!("=== Frontmatter Integration Tests ===\n");
-    
+
     // Valid frontmatter
     let input1 = r#"---
 title: My Note
@@ -27,7 +27,7 @@ tags: example
         println!("  Body nodes: {}", parsed.body.len());
     }
     println!("  Errors: {}\n", result1.1.len());
-    
+
     // Frontmatter with list
     let input2 = r#"---
 id: note-123
@@ -40,18 +40,18 @@ tags:
 "#;
     let result2 = markdown_parser().parse(input2).into_output_errors();
     println!("Frontmatter with list:");
-    if let Some(parsed) = result2.0 {
-        if let Some(fm) = &parsed.frontmatter {
-            for (k, v) in &fm.0 {
-                match v {
-                    Yaml::String(s) => println!("  {}: String({})", k, s),
-                    Yaml::List(items) => println!("  {}: List({:?})", k, items),
-                }
+    if let Some(parsed) = result2.0
+        && let Some(fm) = &parsed.frontmatter
+    {
+        for (k, v) in &fm.0 {
+            match v {
+                Yaml::String(s) => println!("  {}: String({})", k, s),
+                Yaml::List(items) => println!("  {}: List({:?})", k, items),
             }
         }
     }
     println!("  Errors: {}\n", result2.1.len());
-    
+
     // Invalid frontmatter (should skip)
     let input3 = r#"---
 invalid yaml: [unclosed
@@ -67,7 +67,7 @@ invalid yaml: [unclosed
         println!("  Body nodes: {}", parsed.body.len());
     }
     println!("  Errors: {}\n", result3.1.len());
-    
+
     // No frontmatter
     let input4 = "# Header\n\nContent";
     let result4 = markdown_parser().parse(input4).into_output_errors();
@@ -77,7 +77,7 @@ invalid yaml: [unclosed
         println!("  Body nodes: {}", parsed.body.len());
     }
     println!("  Errors: {}\n", result4.1.len());
-    
+
     // Frontmatter-like but not at start
     let input5 = r#"# Header
 

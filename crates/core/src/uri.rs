@@ -125,7 +125,7 @@ impl UriExt for lsp_types::Uri {
 #[cfg(test)]
 mod tests {
     use super::strict_canonicalize;
-    use crate::UriExt;
+    use crate::uri::UriExt;
     use lsp_types::Uri;
     use std::path::Path;
 

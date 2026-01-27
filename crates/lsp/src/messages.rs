@@ -1,4 +1,4 @@
-use serde::{de::DeserializeOwned, Deserialize, Serialize};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use serde_json::Value;
 
 pub const RPC_VERSION: &str = "2.0";
@@ -25,6 +25,7 @@ pub struct Request<P = Value> {
 }
 
 impl Request {
+    #[allow(dead_code)]
     pub fn new<P>(id: usize, method: &str, params: P) -> Self
     where
         P: Serialize,
@@ -106,6 +107,7 @@ impl<P> Notification<P>
 where
     P: Serialize + DeserializeOwned + Default,
 {
+    #[allow(dead_code)]
     pub fn new(method: &str, params: P) -> Self {
         Self {
             jsonrpc: RPC_VERSION.to_string(),

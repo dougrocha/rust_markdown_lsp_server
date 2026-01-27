@@ -1,17 +1,16 @@
+use core::{document::references::ReferenceKind, get_document, path::get_parent_path, uri::UriExt};
+
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
     CreateFile, DocumentChangeOperation, DocumentChanges, OneOf,
     OptionalVersionedTextDocumentIdentifier, Position, Range, ResourceOp, TextDocumentEdit,
     TextEdit, Uri, WorkspaceEdit,
 };
-use miette::{miette, Context, Result};
+use miette::{Context, Result, miette};
 
 use crate::{
-    document::references::ReferenceKind,
-    get_document,
-    lsp::{helpers::extract_header_section, server::Server},
-    path::{find_relative_path, get_parent_path},
-    UriExt,
+    helpers::{extract_header_section, generate_link_text},
+    server::Server,
 };
 
 pub fn process_code_action(
@@ -88,13 +87,14 @@ fn handle_non_range(
                         },
                         edits: vec![OneOf::Left(TextEdit::new(range, {
                             // Use configured link generation style
-                            let link_text = super::helpers::generate_link_text(
+                            let link_text = generate_link_text(
                                 &lsp.config.links,
                                 uri,
                                 &new_file_uri,
                                 lsp.root(),
-                            ).unwrap_or_else(|_| new_file_uri.to_string());
-                            
+                            )
+                            .unwrap_or_else(|_| new_file_uri.to_string());
+
                             format!("[{content}]({link_text})\n\n")
                         }))],
                     }),

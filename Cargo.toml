@@ -1,19 +1,23 @@
 [package]
 name = "rust_markdown_lsp"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [workspace]
 members = [
-    "crates/parser",
+    "crates/core",
+    "crates/lsp", 
+    "crates/parser", 
 ]
 resolver = "2"
 
 [workspace.dependencies]
 ariadne = "0.5.0"
 chumsky = "0.10.1"
+core = { path = "./crates/core", version = "0.1.0" }
 etcetera = "0.10.0"
 log = "0.4.26"
+lsp = { path = "./crates/lsp", version = "0.1.0" }
 lsp-types = "0.97.0"
 miette = "7.5.0"
 parser = { path = "./crates/parser", version = "0.1.0" }
@@ -29,8 +33,11 @@ walkdir = "2.5.0"
 
 [dependencies]
 ariadne = { workspace = true }
+clap = "4.5.55"
+core = { workspace = true }
 etcetera = { workspace = true }
 log = { workspace = true }
+lsp = { workspace = true }
 lsp-types = { workspace = true }
 miette = { workspace = true }
 parser = { workspace = true }

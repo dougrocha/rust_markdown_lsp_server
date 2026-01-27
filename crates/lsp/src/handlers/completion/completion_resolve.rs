@@ -2,7 +2,7 @@ use miette::Result;
 
 use lsp_types::CompletionItem;
 
-use super::super::server::Server;
+use crate::server::Server;
 
 pub fn process_completion_resolve(
     _lsp: &mut Server,

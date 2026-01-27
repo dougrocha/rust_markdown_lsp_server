@@ -1,16 +1,18 @@
-use std::str::FromStr;
-
 use lsp_types::{Position, Range, Uri};
-use miette::{miette, Context, IntoDiagnostic, Result};
+use miette::{Context, Result, miette};
 use ropey::RopeSlice;
 
-use crate::{
-    document::{references::ReferenceKind, Document},
+use core::{
+    document::{
+        Document,
+        references::{Reference, ReferenceKind},
+    },
     get_document,
-    lsp::server::Server,
-    path::combine_and_normalize,
-    Reference, TextBufferConversions, UriExt,
+    text_buffer_conversions::TextBufferConversions,
+    uri::UriExt,
 };
+
+use crate::{config, server::Server};
 
 /// Resolves a target path to a URI using configured link resolution strategy.
 ///
@@ -18,13 +20,9 @@ use crate::{
 /// - Filename-based resolution: "note" finds note.md anywhere in workspace
 /// - Relative paths: "./folder/note.md"
 /// - Absolute paths: "/docs/note.md" (from workspace root)
-pub fn resolve_target_uri(
-    lsp: &Server,
-    document: &Document,
-    target: &str,
-) -> Result<Uri> {
-    use super::link_resolver;
-    
+pub fn resolve_target_uri(lsp: &Server, document: &Document, target: &str) -> Result<Uri> {
+    use crate::handlers::link_resolver;
+
     link_resolver::resolve_link(
         target,
         document,
@@ -78,15 +76,14 @@ pub fn get_content(
 
 /// Generate link text for a target document based on configuration
 pub fn generate_link_text(
-    config: &crate::config::LinkConfig,
+    config: &config::LinkConfig,
     source_uri: &Uri,
     target_uri: &Uri,
     workspace_root: Option<&Uri>,
 ) -> Result<String> {
     use crate::config::LinkGenerationStyle;
-    use crate::path::find_relative_path;
-    use super::link_resolver::extract_filename_stem;
-    
+    use core::path::{extract_filename_stem, find_relative_path};
+
     match config.generation_style {
         LinkGenerationStyle::Filename => {
             // Always use stem (no .md extension) for filename-based links
@@ -94,9 +91,7 @@ pub fn generate_link_text(
                 .ok_or_else(|| miette!("Failed to extract filename from URI"))?;
             Ok(filename)
         }
-        LinkGenerationStyle::Relative => {
-            find_relative_path(source_uri, target_uri)
-        }
+        LinkGenerationStyle::Relative => find_relative_path(source_uri, target_uri),
         LinkGenerationStyle::Absolute => {
             if let Some(root) = workspace_root {
                 generate_absolute_path(root, target_uri)
@@ -113,15 +108,15 @@ fn generate_absolute_path(root: &Uri, target: &Uri) -> Result<String> {
     let root_path = root
         .to_file_path()
         .ok_or_else(|| miette!("Failed to convert root to path"))?;
-    
+
     let target_path = target
         .to_file_path()
         .ok_or_else(|| miette!("Failed to convert target to path"))?;
-    
+
     let relative = target_path
         .strip_prefix(&root_path)
         .map_err(|_| miette!("Target is not within workspace root"))?;
-    
+
     Ok(format!("/{}", relative.to_string_lossy()))
 }
 
@@ -152,7 +147,7 @@ pub fn extract_header_section<'a>(
         } = &link.kind
         {
             // Check if this header matches our target header
-            let target_content = header.strip_prefix('#').unwrap_or(&header);
+            let target_content = header.strip_prefix('#').unwrap_or(header);
 
             // Try multiple matching strategies:
             // 1. Exact match with stripped prefix
@@ -198,7 +193,7 @@ pub fn extract_header_section<'a>(
 
 #[cfg(test)]
 mod tests {
-    use parser::Parser;
+    use std::str::FromStr;
 
     use super::*;
 
@@ -240,9 +235,6 @@ mod tests {
 
     #[test]
     fn test_extract_header_section_hierarchy() {
-        use crate::document::references::{Reference, ReferenceKind};
-        use lsp_types::{Position, Range};
-
         // Create test content with nested headers
         let input = "# H1 Header\nContent under H1\n\n## H2 Header\nContent under H2\n\n### H3 Header\nContent under H3\n\n### Another H3\nMore H3 content\n\n## Another H2\nMore H2 content\n\n# Another H1\nMore H1 content";
 
@@ -295,7 +287,7 @@ mod tests {
 
     #[test]
     fn test_resolve_target_uri() {
-        use crate::lsp::server::Server;
+        use crate::server::Server;
         use lsp_types::Uri;
         use std::str::FromStr;
 
@@ -324,7 +316,7 @@ mod tests {
 
     #[test]
     fn test_extract_header_section_edge_cases() {
-        use crate::document::references::{Reference, ReferenceKind};
+        use core::document::references::{Reference, ReferenceKind};
         use lsp_types::{Position, Range};
         use ropey::Rope;
 

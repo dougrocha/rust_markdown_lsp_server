@@ -1,12 +1,13 @@
 use lsp_types::{ClientCapabilities, Uri, WorkspaceFolder};
-use miette::{miette, Context, IntoDiagnostic, Result};
+use miette::{Context, IntoDiagnostic, Result, miette};
 use std::collections::HashMap;
 
-use crate::{
-    config::Config,
-    document::{references::Reference, Document},
-    UriExt,
+use core::{
+    document::{Document, references::Reference},
+    uri::UriExt,
 };
+
+use crate::config::Config;
 
 #[derive(Default)]
 pub struct DocumentStore {

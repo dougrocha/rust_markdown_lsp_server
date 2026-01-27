@@ -1,7 +1,7 @@
 use lsp_types::Uri;
-use miette::{miette, Context, IntoDiagnostic, Result};
+use miette::{Context, IntoDiagnostic, Result, miette};
 
-use crate::UriExt;
+use crate::uri::UriExt;
 
 pub fn get_parent_path(uri: &Uri) -> Option<String> {
     let mut segments = uri.path().segments().collect::<Vec<_>>();
@@ -68,5 +68,37 @@ pub fn find_relative_path(source: &Uri, target: &Uri) -> Result<String> {
         Ok(format!("./{relative_path_str}"))
     } else {
         Ok(relative_path_str)
+    }
+}
+
+/// Extract filename without extension from URI
+/// Example: file:///path/to/note.md -> Some("note")
+pub fn extract_filename_stem(uri: &Uri) -> Option<String> {
+    let path = uri.to_file_path()?;
+    let filename = path.file_stem()?;
+    Some(filename.to_string_lossy().into_owned())
+}
+
+/// Extract full filename with extension from URI
+/// Example: file:///path/to/note.md -> Some("note.md")
+pub fn extract_filename(uri: &Uri) -> Option<String> {
+    let path = uri.to_file_path()?;
+    let filename = path.file_name()?;
+    Some(filename.to_string_lossy().into_owned())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::str::FromStr;
+
+    use super::*;
+
+    #[test]
+    fn test_extract_filename_stem() {
+        let uri = Uri::from_str("file:///path/to/note.md").unwrap();
+        assert_eq!(extract_filename_stem(&uri), Some("note".to_string()));
+
+        let uri = Uri::from_str("file:///my-note.md").unwrap();
+        assert_eq!(extract_filename_stem(&uri), Some("my-note".to_string()));
     }
 }

@@ -1,16 +1,17 @@
+use core::{
+    document::{
+        Document,
+        references::{Reference as DocReference, ReferenceKind},
+    },
+    get_document,
+};
 use lsp_types::{Location, ReferenceParams, Uri};
 use miette::{Context, Result};
 
 use crate::{
-    document::{
-        references::{Reference as DocReference, ReferenceKind},
-        Document,
-    },
-    get_document,
-    lsp::helpers::{normalize_header_content, resolve_target_uri},
+    helpers::{normalize_header_content, resolve_target_uri},
+    server::{DocumentStore, Server},
 };
-
-use super::server::{DocumentStore, Server};
 
 pub fn process_references(
     lsp: &mut Server,
@@ -29,11 +30,11 @@ pub fn process_references(
     };
 
     // Include the hovered reference itself if requested
-    if params.context.include_declaration {
-        if let Some(reference) = reference_at_position {
-            let declaration_location = Location::new(uri.clone(), reference.range);
-            reference_locations.insert(0, declaration_location);
-        }
+    if params.context.include_declaration
+        && let Some(reference) = reference_at_position
+    {
+        let declaration_location = Location::new(uri.clone(), reference.range);
+        reference_locations.insert(0, declaration_location);
     }
 
     Ok(Some(reference_locations))
@@ -124,14 +125,13 @@ impl<'a> ReferenceCollector<'a> {
             ReferenceKind::Link { header, target, .. }
             | ReferenceKind::WikiLink { header, target, .. } => {
                 // Resolve the source link's target to compare with other references
-                let resolved_target =
-                    match resolve_target_uri(self.lsp, self.source_doc, target) {
-                        Ok(target) => target,
-                        Err(err) => {
-                            log::error!("Source link target resolution failed: {:?}", err);
-                            return None;
-                        }
-                    };
+                let resolved_target = match resolve_target_uri(self.lsp, self.source_doc, target) {
+                    Ok(target) => target,
+                    Err(err) => {
+                        log::error!("Source link target resolution failed: {:?}", err);
+                        return None;
+                    }
+                };
 
                 self.match_link_reference(uri, reference, header.as_deref(), &resolved_target)
             }
