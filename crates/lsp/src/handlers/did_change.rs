@@ -1,19 +1,9 @@
-use lsp_types::{TextDocumentContentChangeEvent, VersionedTextDocumentIdentifier};
+use lsp_types::{DidChangeTextDocumentParams, TextDocumentContentChangeEvent};
 use miette::Result;
-use serde::Deserialize;
 
-use crate::{messages::Notification, server::Server};
+use crate::server::Server;
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct DidChangeTextDocumentParams {
-    text_document: VersionedTextDocumentIdentifier,
-    content_changes: Vec<TextDocumentContentChangeEvent>,
-}
-
-pub fn process_did_change(lsp: &mut Server, notification: Notification) -> Result<()> {
-    let params: DidChangeTextDocumentParams = serde_json::from_value(notification.params).unwrap();
-
+pub fn process_did_change(lsp: &mut Server, params: DidChangeTextDocumentParams) -> Result<()> {
     let uri = params.text_document.uri;
 
     for change in params.content_changes {

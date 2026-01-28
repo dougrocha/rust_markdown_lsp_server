@@ -50,28 +50,29 @@ fn find_definition<'a>(
 
     let document = get_document!(lsp, &file_path);
 
-    for reference in &document.references {
-        if let ReferenceKind::Header { content, .. } = &reference.kind {
-            if header.is_none() {
-                return Ok((document, reference.range));
-            }
+    let reference = document.references.iter().find(|reference| {
+        let ReferenceKind::Header { content, .. } = &reference.kind else {
+            return false;
+        };
 
-            let target_header = header.unwrap();
-            let target_content = target_header.strip_prefix('#').unwrap_or(target_header);
-
-            // Try multiple matching strategies:
-            // 1. Exact match
-            // 2. Normalized target vs original content
-            // 3. Normalized target vs normalized content
-            let matches = *content == target_content
-                || normalize_header_content(content) == target_content
-                || normalize_header_content(content) == normalize_header_content(target_content);
-
-            if matches {
-                return Ok((document, reference.range));
-            }
+        if header.is_none() {
+            return true;
         }
-    }
 
-    Err(miette::miette!("Definition not found"))
+        let target_header = header.unwrap();
+        let target_content = target_header.strip_prefix('#').unwrap_or(target_header);
+
+        // Try multiple matching strategies:
+        // 1. Exact match
+        // 2. Normalized target vs original content
+        // 3. Normalized target vs normalized content
+        *content == target_content
+            || normalize_header_content(content) == target_content
+            || normalize_header_content(content) == normalize_header_content(target_content)
+    });
+
+    match reference {
+        Some(reference) => Ok((document, reference.range)),
+        None => Err(miette::miette!("Definition not found")),
+    }
 }

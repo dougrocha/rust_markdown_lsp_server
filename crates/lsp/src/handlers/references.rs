@@ -149,12 +149,10 @@ impl<'a> ReferenceCollector<'a> {
 
         Self::resolve_and_check_target(self.lsp, self.source_doc, target, self.source_uri)?;
 
-        if let Some(link_header) = reference.kind.get_link_header() {
-            if normalized_headers_match(source_content, link_header) {
-                Some(Location::new(uri.clone(), reference.range))
-            } else {
-                None
-            }
+        if let Some(link_header) = reference.kind.get_link_header()
+            && normalized_headers_match(source_content, link_header)
+        {
+            Some(Location::new(uri.clone(), reference.range))
         } else {
             None
         }
@@ -191,7 +189,7 @@ impl<'a> ReferenceCollector<'a> {
 
         let reference_header = reference.kind.get_link_header();
 
-        if headers_are_compatible(source_header, reference_header) {
+        if source_header == reference_header {
             Some(())
         } else {
             None
@@ -223,13 +221,4 @@ impl<'a> ReferenceCollector<'a> {
 // This will normalize both headers before comparing
 fn normalized_headers_match(content1: &str, content2: &str) -> bool {
     normalize_header_content(content1) == normalize_header_content(content2)
-}
-
-/// Headers are compatible if they are both None or both Some and equal
-fn headers_are_compatible(h1: Option<&str>, h2: Option<&str>) -> bool {
-    match (h1, h2) {
-        (Some(header1), Some(header2)) => header1 == header2,
-        (None, None) => true,
-        _ => false,
-    }
 }

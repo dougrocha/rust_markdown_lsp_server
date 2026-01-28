@@ -94,18 +94,12 @@ fn resolve_by_filename(
 
     let normalized_target = normalize_for_matching(target_stem);
 
-    // Search all documents for matching filename
-    for doc in documents.get_documents() {
-        if let Some(doc_filename) = extract_filename_stem(&doc.uri) {
-            let normalized_doc = normalize_for_matching(&doc_filename);
+    documents.get_documents().find_map(|doc| {
+        let doc_filename = extract_filename_stem(&doc.uri)?;
+        let normalized_doc = normalize_for_matching(&doc_filename);
 
-            if normalized_target == normalized_doc {
-                return Some(doc.uri.clone());
-            }
-        }
-    }
-
-    None
+        (normalized_target == normalized_doc).then(|| doc.uri.clone())
+    })
 }
 
 /// Normalize string for matching (case-insensitive, unified separators)

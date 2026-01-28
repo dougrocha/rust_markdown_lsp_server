@@ -1,23 +1,13 @@
-use lsp_types::TextDocumentItem;
+use lsp_types::DidOpenTextDocumentParams;
 use miette::Result;
-use serde::Deserialize;
 
-use crate::{messages::Notification, server::Server};
+use crate::server::Server;
 
-#[derive(Deserialize, Debug)]
-#[serde(rename_all = "camelCase")]
-pub struct DidOpenTextDocumentParams {
-    text_document: TextDocumentItem,
-}
-
-pub fn process_did_open(lsp: &mut Server, notification: Notification) -> Result<()> {
-    let did_open_params: DidOpenTextDocumentParams =
-        serde_json::from_value(notification.params).unwrap();
-
+pub fn process_did_open(lsp: &mut Server, params: DidOpenTextDocumentParams) -> Result<()> {
     lsp.documents.open_document(
-        &did_open_params.text_document.uri,
-        did_open_params.text_document.version,
-        &did_open_params.text_document.text,
+        &params.text_document.uri,
+        params.text_document.version,
+        &params.text_document.text,
     )?;
 
     Ok(())

@@ -1,11 +1,12 @@
-use lsp_types::error_codes;
 use lsp_types::{
-    InitializeParams,
+    InitializeParams, error_codes,
+    notification::{self, Notification as LspNotification},
     request::{self, Request as LspRequest},
 };
 use miette::{Context, IntoDiagnostic, Result, miette};
 use std::io::{self, BufRead, Write};
 
+use crate::dispatch_lsp_notification;
 use crate::{
     Server, dispatch_lsp_request,
     handlers::{
@@ -56,7 +57,19 @@ pub fn run_lsp() -> Result<()> {
                 }
             },
             Message::Notification(notification) => {
-                handle_notification(&mut lsp, notification)?;
+                log::debug!("textDocument/{}", notification.method);
+
+                match notification.method.as_str() {
+                    "exit" => {
+                        log::info!("Received exit notification");
+                    }
+                    _ => {
+                        dispatch_lsp_notification!(&mut lsp, notification, {
+                            notification::DidOpenTextDocument => process_did_open,
+                            notification::DidChangeTextDocument => process_did_change,
+                        });
+                    }
+                }
             }
         }
     }
@@ -115,26 +128,18 @@ where
     Ok(())
 }
 
-pub(crate) fn handle_notification(lsp: &mut Server, notification: Notification) -> Result<()> {
-    log::debug!("textDocument/{}", notification.method);
-    match notification.method.as_str() {
-        "initialized" => {
-            log::info!("Initialized");
-        }
-        "textDocument/didOpen" => {
-            process_did_open(lsp, notification)?;
-        }
-        "textDocument/didSave" => {
-            serde_json::to_string_pretty(&notification).unwrap();
-        }
-        "textDocument/didChange" => {
-            process_did_change(lsp, notification)?;
-        }
-        "textDocument/didClose" => {}
-        _ => {
-            log::warn!("Unimplemented Notification: {}", notification.method);
-        }
-    };
+pub(crate) fn handle_notification<R, F>(
+    lsp: &mut Server,
+    raw_notification: Notification,
+    handler: F,
+) -> Result<()>
+where
+    R: LspNotification,
+    F: FnOnce(&mut Server, R::Params) -> Result<()>,
+{
+    let params: R::Params = serde_json::from_value(raw_notification.params)
+        .into_diagnostic()
+        .context("Failed to deserialize request params")?;
 
-    Ok(())
+    handler(lsp, params)
 }

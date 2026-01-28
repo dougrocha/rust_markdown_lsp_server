@@ -15,3 +15,21 @@ macro_rules! dispatch_lsp_request {
         }
     };
 }
+
+#[macro_export]
+macro_rules! dispatch_lsp_notification {
+    ($lsp:expr, $notification:expr, {
+        $($notification_type:path => $handler:ident),* $(,)?
+    }) => {
+        match $notification.method.as_str() {
+            $(
+                <$notification_type as lsp_types::notification::Notification>::METHOD => {
+                    handle_notification::<$notification_type, _>($lsp, $notification, $handler)?;
+                }
+            )*
+            method => {
+                log::warn!("Unimplemented notification method: {}", method);
+            }
+        }
+    };
+}
