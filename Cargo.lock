@@ -286,6 +286,7 @@ dependencies = [
  "miette",
  "pathdiff",
  "ropey",
+ "thiserror",
 ]
 
 [[package]]

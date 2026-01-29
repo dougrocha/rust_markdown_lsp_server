@@ -4,9 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+lib-parser = { workspace = true }
 log = { workspace = true }
-pathdiff = { workspace = true }
 lsp-types = { workspace = true }
 miette = { workspace = true }
-lib-parser = { workspace = true }
+pathdiff = { workspace = true }
 ropey = { workspace = true }
+thiserror = { workspace = true }
