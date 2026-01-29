@@ -8,7 +8,7 @@ use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionParams,
     CompletionResponse, CompletionTriggerKind, Documentation,
 };
-use miette::{Context, Result};
+use miette::{Context, Result, miette};
 
 use crate::{
     handlers::link_resolver,
@@ -19,9 +19,105 @@ use crate::{
 pub mod completion_resolve;
 
 #[derive(Debug, Clone, Copy, PartialEq)]
+struct HeaderContext<'a> {
+    file_path: &'a str,
+    link_type: LinkType,
+    is_incomplete: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct LinkContext {
+    link_type: LinkType,
+    is_incomplete: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+enum CompletionIntent<'a> {
+    Document(LinkContext),
+    Header(HeaderContext<'a>),
+    Footnote,
+}
+
+impl CompletionIntent<'_> {
+    fn from_position<'a>(document: &'a Document, byte_pos: usize) -> Option<CompletionIntent<'a>> {
+        let slice = document.content.slice(..);
+
+        if byte_pos >= 2 {
+            let trigger = slice
+                .get_byte_slice(byte_pos.saturating_sub(2)..byte_pos)
+                .map(|s| s.as_str())?;
+
+            if let Some(trigger) = trigger
+                && let Some(link_type) = LinkType::detect(trigger)
+            {
+                return Some(CompletionIntent::Document(LinkContext {
+                    link_type,
+                    is_incomplete: !has_closing_chars(document, byte_pos, link_type),
+                }));
+            }
+        }
+
+        if byte_pos >= 1 {
+            let trigger = slice
+                .get_byte_slice(byte_pos.saturating_sub(1)..byte_pos)
+                .map(|s| s.as_str())?;
+
+            if let Some(trigger) = trigger
+                && trigger == "#"
+            {
+                let (file_path, link_type) =
+                    extract_file_and_link_type_from_context(document, byte_pos)?;
+
+                return Some(CompletionIntent::Header(HeaderContext {
+                    file_path,
+                    link_type,
+                    is_incomplete: !has_closing_chars(document, byte_pos, link_type),
+                }));
+            }
+        }
+
+        None
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
 enum LinkType {
     WikiLink,
     MarkdownLink,
+}
+
+impl LinkType {
+    fn detect(text: &str) -> Option<Self> {
+        match text {
+            "[[" => Some(Self::WikiLink),
+            "](" => Some(Self::MarkdownLink),
+            _ => None,
+        }
+    }
+
+    fn suffix(&self) -> &'static str {
+        match self {
+            LinkType::WikiLink => "]]",
+            LinkType::MarkdownLink => ")",
+        }
+    }
+
+    fn format_completion(&self, text: &str, is_incomplete: bool) -> String {
+        if is_incomplete {
+            format!("{}{}", text, self.suffix())
+        } else {
+            text.to_string()
+        }
+    }
+
+    fn encode_text(&self, text: &str) -> String {
+        match self {
+            // Wiki links typically handle spaces natively
+            LinkType::WikiLink => text.to_string(),
+            // Markdown links (URLs) require percent-encoding for spaces
+            LinkType::MarkdownLink => text.replace(' ', "%20"),
+        }
+    }
 }
 
 pub fn process_completion(
@@ -33,26 +129,29 @@ pub fn process_completion(
 
     let document = get_document!(lsp, &uri);
 
+    let context = params
+        .context
+        .ok_or_else(|| miette!("Completion context does not exist"))?;
+
     // TODO: Make all outputs for paths and headers be normalized without spaces and symbols
-    if let Some(context) = params.context {
-        let completions = match context.trigger_kind {
-            CompletionTriggerKind::INVOKED => handle_invoked_completion(lsp, document, position),
-            CompletionTriggerKind::TRIGGER_CHARACTER => {
-                handle_trigger_completion(lsp, document, position)
-            }
-            CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS => {
-                log::error!("Completions for incomplete trigger is not implemented yet");
-                None
-            }
-            _ => panic!("Unexpected completion trigger kind"),
-        };
+    let completions = match context.trigger_kind {
+        CompletionTriggerKind::INVOKED => handle_invoked_completion(lsp, document, position),
+        CompletionTriggerKind::TRIGGER_CHARACTER => {
+            handle_trigger_completion(lsp, document, position)
+        }
+        CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS => {
+            log::error!("Completions for incomplete trigger is not implemented yet");
+            None
+        }
+        _ => {
+            return Err(miette!(
+                "Unexpected completion trigger kind {:?}",
+                context.trigger_kind
+            ));
+        }
+    };
 
-        return Ok(completions.map(Into::into));
-    }
-
-    log::error!("Context does not exist");
-
-    Ok(None)
+    Ok(completions.map(Into::into))
 }
 
 fn handle_invoked_completion(
@@ -63,30 +162,21 @@ fn handle_invoked_completion(
     let slice = document.content.slice(..);
     let byte_pos = slice.lsp_position_to_byte(position);
 
-    let mut tmp_byte_pos = byte_pos.saturating_sub(1);
-    while tmp_byte_pos > 0 {
-        let byte = slice.byte(tmp_byte_pos);
+    let (anchor_idx, anchor_char) = find_byte_backwards_any(&slice, byte_pos, b"[(#:\n")?;
 
-        match byte {
-            b'(' | b'[' => {
-                break;
-            }
-            b')' | b']' => {
-                log::debug!("Found closing bracket during backtrack, aborting completion");
-                return None;
-            }
-            b'\n' => {
-                log::debug!("Found newline during backtrack, no trigger found");
-                return None;
-            }
-            _ => {
-                tmp_byte_pos = tmp_byte_pos.saturating_sub(1);
-            }
-        }
+    if anchor_char == b'\n' {
+        return None;
     }
-    tmp_byte_pos += 1;
 
-    handle_trigger_completion(lsp, document, slice.byte_to_lsp_position(tmp_byte_pos))
+    let trigger_pos = anchor_idx + 1;
+    let trigger_lsp_pos = slice.byte_to_lsp_position(trigger_pos);
+
+    log::debug!(
+        "Invoked: {:?}",
+        slice.get_slice(trigger_pos.saturating_sub(2)..trigger_pos.saturating_add(4))
+    );
+
+    handle_trigger_completion(lsp, document, trigger_lsp_pos)
 }
 
 fn handle_trigger_completion(
@@ -97,42 +187,22 @@ fn handle_trigger_completion(
     let slice = document.content.slice(..);
     let byte_pos = slice.lsp_position_to_byte(position);
 
-    log::debug!(
-        "Handling trigger completion: {:?}",
-        slice.get_byte_slice(byte_pos.saturating_sub(4)..byte_pos)
-    );
+    let intent = CompletionIntent::from_position(document, byte_pos)?;
 
-    if let Some(trigger_context) = slice.get_byte_slice(byte_pos.saturating_sub(2)..byte_pos)
-        && (trigger_context == "[[" || trigger_context == "](")
-    {
-        let link_type = if trigger_context == "[[" {
-            LinkType::WikiLink
-        } else {
-            LinkType::MarkdownLink
-        };
-
-        return complete_document_links(lsp, document, &slice, byte_pos, link_type);
-    }
-
-    if let Some(trigger_context) = slice.get_byte_slice(byte_pos.saturating_sub(1)..byte_pos) {
-        if trigger_context == ":" {
-            // do nothing for now
-        }
-
-        if trigger_context == "#" {
-            return complete_headers(lsp, document, byte_pos);
+    match intent {
+        CompletionIntent::Document(ctx) => complete_document_links(lsp, document, ctx),
+        CompletionIntent::Header(ctx) => complete_headers(lsp, document, ctx),
+        CompletionIntent::Footnote => {
+            // do nothing
+            None
         }
     }
-
-    None
 }
 
 fn complete_document_links(
     lsp: &Server,
     document: &Document,
-    slice: &ropey::RopeSlice<'_>,
-    byte_pos: usize,
-    link_type: LinkType,
+    ctx: LinkContext,
 ) -> Option<Vec<CompletionItem>> {
     let mut completions: Vec<CompletionItem> = vec![];
 
@@ -151,29 +221,11 @@ fn complete_document_links(
             }
         };
 
-        // Handle spaces in generated text
-        let insert_text = if link_text.contains(' ') {
-            match link_type {
-                LinkType::WikiLink => link_text.clone(), // Wiki links handle spaces
-                LinkType::MarkdownLink => link_text.replace(' ', "%20"), // URL encode for markdown links
-            }
-        } else {
-            link_text.clone()
-        };
+        let encoded_text = ctx.link_type.encode_text(&link_text);
 
-        let position = slice.byte_to_lsp_position(byte_pos);
-        log::debug!("Position: {:#?}", position);
-
-        let has_closing = has_closing_chars(document, byte_pos, link_type, slice);
-
-        let insert_text = if has_closing {
-            insert_text.clone()
-        } else {
-            match link_type {
-                LinkType::WikiLink => format!("{insert_text}]]"),
-                LinkType::MarkdownLink => format!("{insert_text})"),
-            }
-        };
+        let insert_text = ctx
+            .link_type
+            .format_completion(&encoded_text, ctx.is_incomplete);
 
         completions.push(CompletionItem {
             label: link_text.clone(),
@@ -200,13 +252,12 @@ fn complete_document_links(
 fn complete_headers(
     lsp: &Server,
     document: &Document,
-    byte_pos: usize,
+    ctx: HeaderContext,
 ) -> Option<Vec<CompletionItem>> {
     let mut completions: Vec<CompletionItem> = vec![];
 
-    let (file_path, link_type) = extract_file_and_link_type_from_context(document, byte_pos)?;
     let file_uri = match link_resolver::resolve_link(
-        &file_path,
+        ctx.file_path,
         document,
         &lsp.config.links,
         &lsp.documents,
@@ -216,30 +267,23 @@ fn complete_headers(
         Err(e) => {
             log::warn!(
                 "Header completion failed to resolve link '{}': {}",
-                file_path,
+                ctx.file_path,
                 e
             );
             return None;
         }
     };
+
     let ref_doc = lsp.documents.get_document(&file_uri)?;
     for doc_ref in &ref_doc.references {
         if let ReferenceKind::Header { level, content } = &doc_ref.kind {
             let header_id = normalize_header_content(content);
 
             let label = content.to_uppercase();
-            let slice = document.content.slice(..);
 
-            let has_closing = has_closing_chars(document, byte_pos, link_type, &slice);
-
-            let insert_text = if has_closing {
-                header_id.clone()
-            } else {
-                match link_type {
-                    LinkType::WikiLink => format!("{header_id}]]"),
-                    LinkType::MarkdownLink => format!("{header_id})"),
-                }
-            };
+            let insert_text = ctx
+                .link_type
+                .format_completion(&header_id, ctx.is_incomplete);
 
             completions.push(CompletionItem {
                 label,
@@ -260,16 +304,14 @@ fn complete_headers(
     Some(completions)
 }
 
-fn has_closing_chars(
-    document: &Document,
-    byte_pos: usize,
-    link_type: LinkType,
-    slice: &ropey::RopeSlice<'_>,
-) -> bool {
+fn has_closing_chars(document: &Document, byte_pos: usize, link_type: LinkType) -> bool {
+    let slice = document.content.slice(..);
+
     if document
         .get_reference_at_position(slice.byte_to_lsp_position(byte_pos))
         .is_some()
     {
+        log::debug!("HERE TRUE");
         return true;
     }
 
@@ -285,32 +327,49 @@ fn has_closing_chars(
     }
 }
 
-fn extract_file_and_link_type_from_context(
-    document: &Document,
-    byte_pos: usize,
-) -> Option<(String, LinkType)> {
-    let content = document.content.slice(..);
-    let start = byte_pos.saturating_sub(200);
-    let search_slice = content.slice(start..byte_pos.min(content.len_bytes()));
-
-    let mut bracket_pos = None;
-    let mut link_type: Option<LinkType> = None;
-
-    for i in 0..search_slice.len_bytes().saturating_sub(1) {
-        let window = &search_slice.byte_slice(i..i + 2);
-        if window == "[[" {
-            bracket_pos = Some(i);
-            link_type = Some(LinkType::WikiLink);
-        } else if window == "](" {
-            bracket_pos = Some(i);
-            link_type = Some(LinkType::MarkdownLink);
+fn find_byte_backwards_any(
+    content: &ropey::RopeSlice<'_>,
+    start_pos: usize,
+    stop_chars: &[u8],
+) -> Option<(usize, u8)> {
+    for (i, byte) in content.bytes_at(start_pos).reversed().enumerate() {
+        if i > 50 {
+            break;
+        }
+        if stop_chars.contains(&byte) {
+            // Return both the index and WHICH character we hit
+            return Some((start_pos.saturating_sub(i + 1), byte));
         }
     }
 
-    let bracket_idx = bracket_pos?;
-    let from_bracket = content.slice(start + bracket_idx + 2..);
-    let hash_pos = from_bracket.bytes().position(|b| b == b'#')?;
+    None
+}
 
-    let file_bytes = &from_bracket.slice(..hash_pos);
-    Some((file_bytes.to_string(), link_type?))
+fn extract_file_and_link_type_from_context(
+    document: &Document,
+    byte_pos: usize,
+) -> Option<(&str, LinkType)> {
+    let slice = document.content.slice(..);
+
+    let (idx, found_char) = find_byte_backwards_any(&slice, byte_pos, b"[(")?;
+
+    match found_char {
+        b'[' => {
+            // Peek left: is it another '['? -> WikiLink
+            if idx > 0 && slice.byte(idx - 1) == b'[' {
+                let path = slice.get_byte_slice(idx + 1..byte_pos)?.as_str()?;
+                return Some((path, LinkType::WikiLink));
+            }
+        }
+        b'(' => {
+            // Peek left: is it a ']'? -> MarkdownLink [text](path)
+            if idx > 0 && slice.byte(idx - 1) == b']' {
+                let path = slice.get_byte_slice(idx + 1..byte_pos)?.as_str()?;
+                return Some((path, LinkType::MarkdownLink));
+            }
+        }
+        _ => {}
+    }
+
+    None
 }

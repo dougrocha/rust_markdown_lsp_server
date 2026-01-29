@@ -14,10 +14,10 @@ pub fn get_parent_path(uri: &Uri) -> Option<String> {
 pub fn combine_and_normalize(source: &Uri, target: &Uri) -> Result<Uri> {
     let source = source
         .to_file_path()
-        .expect("Failed to retrieve source directory");
+        .context("Failed to retrieve source directory")?;
     let parent = source
         .parent()
-        .expect("Failed to retrieve parent directory");
+        .context("Failed to retrieve parent directory")?;
 
     let target_path = target.as_str();
 
@@ -28,8 +28,7 @@ pub fn combine_and_normalize(source: &Uri, target: &Uri) -> Result<Uri> {
         .into_diagnostic()
         .context("Failed to canonicalize the combined path")?;
 
-    let new_path =
-        Uri::from_file_path(path).ok_or_else(|| miette!("Failed to create URI from file path"))?;
+    let new_path = Uri::from_file_path(path).context("Failed to create URI from file path")?;
     Ok(new_path)
 }
 

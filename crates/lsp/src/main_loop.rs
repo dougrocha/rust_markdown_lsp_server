@@ -1,14 +1,15 @@
 use lsp_types::{
-    InitializeParams, error_codes,
+    error_codes,
     notification::{self, Notification as LspNotification},
     request::{self, Request as LspRequest},
+    InitializeParams,
 };
-use miette::{Context, IntoDiagnostic, Result, miette};
+use miette::{miette, Context, IntoDiagnostic, Result};
 use std::io::{self, BufRead, Write};
 
 use crate::dispatch_lsp_notification;
 use crate::{
-    Server, dispatch_lsp_request,
+    dispatch_lsp_request,
     handlers::{
         code_action::process_code_action,
         completion::{completion_resolve::process_completion_resolve, process_completion},
@@ -22,6 +23,7 @@ use crate::{
     },
     messages::{Message, Notification, Request, Response},
     rpc::{encode_message, handle_message, write_msg},
+    Server,
 };
 
 pub fn run_lsp() -> Result<()> {
@@ -57,11 +59,14 @@ pub fn run_lsp() -> Result<()> {
                 }
             },
             Message::Notification(notification) => {
-                log::debug!("textDocument/{}", notification.method);
+                log::trace!("textDocument/{}", notification.method);
 
                 match notification.method.as_str() {
                     "exit" => {
-                        log::info!("Received exit notification");
+                        log::trace!("Received exit notification");
+                    }
+                    "initialized" => {
+                        log::trace!("Initialization confirmed!");
                     }
                     _ => {
                         dispatch_lsp_notification!(&mut lsp, notification, {
@@ -118,6 +123,7 @@ where
     let response = match handler(lsp, params) {
         Ok(result) => Response::from_ok(raw_request.id, result),
         Err(err) => {
+            log::error!("Request failed [method: {}]: {:?}", R::METHOD, err);
             Response::from_error(raw_request.id, error_codes::REQUEST_FAILED, err.to_string())
         }
     };
@@ -141,5 +147,10 @@ where
         .into_diagnostic()
         .context("Failed to deserialize request params")?;
 
-    handler(lsp, params)
+    if let Err(err) = handler(lsp, params) {
+        log::error!("Notification failed [method: {}]: {:?}", R::METHOD, err);
+        return Err(err);
+    }
+
+    Ok(())
 }

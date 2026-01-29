@@ -7,7 +7,7 @@ use crate::messages::Message;
 pub fn encode_message<T: serde::Serialize>(msg: T) -> Result<String> {
     let result_str = serde_json::to_string(&msg)
         .into_diagnostic()
-        .map_err(|e| miette!("Failed to serialize message to JSON: {}", e))?;
+        .context("Failed to serialize message to JSON")?;
 
     let output = format!("Content-Length: {}\r\n\r\n{}", result_str.len(), result_str);
 
@@ -17,10 +17,10 @@ pub fn encode_message<T: serde::Serialize>(msg: T) -> Result<String> {
 pub fn write_msg(out: &mut dyn Write, msg: &str) -> Result<()> {
     out.write_all(msg.as_bytes())
         .into_diagnostic()
-        .wrap_err("Failed to write message to output stream")?;
+        .context("Failed to write message to output stream")?;
     out.flush()
         .into_diagnostic()
-        .wrap_err("Failed to flush output stream")?;
+        .context("Failed to flush output stream")?;
 
     Ok(())
 }
@@ -34,7 +34,7 @@ pub fn read_message<R: BufRead>(reader: &mut R) -> Result<Option<String>> {
         if reader
             .read_line(&mut line)
             .into_diagnostic()
-            .wrap_err("Failed to read line from input stream")?
+            .context("Failed to read line from input stream")?
             == 0
         {
             if buf.is_empty() {
@@ -63,7 +63,7 @@ pub fn read_message<R: BufRead>(reader: &mut R) -> Result<Option<String>> {
     reader
         .read_exact(&mut buf)
         .into_diagnostic()
-        .wrap_err("Failed to read exact bytes from input stream")?;
+        .context("Failed to read exact bytes from input stream")?;
 
     let buf = String::from_utf8(buf).map_err(|_| miette!("Failed to convert bytes to string"))?;
 

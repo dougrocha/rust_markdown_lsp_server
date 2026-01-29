@@ -15,9 +15,9 @@ pub struct DocumentStore {
 }
 
 impl DocumentStore {
-    pub fn open_document(&mut self, uri: &Uri, version: i32, text: &str) -> Result<()> {
+    pub fn open_document(&mut self, uri: Uri, version: i32, text: &str) -> Result<()> {
         let document = Document::new(uri.clone(), text, version)?;
-        self.documents.insert(uri.clone(), document);
+        self.documents.insert(uri, document);
 
         Ok(())
     }
@@ -117,11 +117,12 @@ impl Server {
                 let uri = Uri::from_file_path(entry_path);
 
                 match uri {
-                    Some(uri) => self.documents.open_document(&uri, 0, &contents)?,
+                    Some(uri) => self.documents.open_document(uri, 0, &contents)?,
                     None => log::debug!("Failed to create URI from path: {:?}", entry_path),
                 }
             }
         }
+
         Ok(())
     }
 }
