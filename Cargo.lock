@@ -159,18 +159,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "baf0a07a401f374238ab8e2f11a104d2851bf9ce711ec69804834de8af45c7af"
 
 [[package]]
-name = "core"
-version = "0.1.0"
-dependencies = [
- "log",
- "lsp-types",
- "miette",
- "parser",
- "pathdiff",
- "ropey",
-]
-
-[[package]]
 name = "deranged"
 version = "0.4.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -289,6 +277,42 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4a5f13b858c8d314ee3e8f639011f7ccefe71f97f96e50151fb991f267928e2c"
 
 [[package]]
+name = "lib-core"
+version = "0.1.0"
+dependencies = [
+ "lib-parser",
+ "log",
+ "lsp-types",
+ "miette",
+ "pathdiff",
+ "ropey",
+]
+
+[[package]]
+name = "lib-lsp"
+version = "0.1.0"
+dependencies = [
+ "lib-core",
+ "log",
+ "lsp-types",
+ "miette",
+ "ropey",
+ "serde",
+ "serde_json",
+ "toml",
+ "walkdir",
+]
+
+[[package]]
+name = "lib-parser"
+version = "0.1.0"
+dependencies = [
+ "ariadne",
+ "chumsky",
+ "divan",
+]
+
+[[package]]
 name = "libc"
 version = "0.2.172"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -305,21 +329,6 @@ name = "log"
 version = "0.4.27"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13dc2df351e3202783a1fe0d44375f7295ffb4049267b0f3018346dc122a1d94"
-
-[[package]]
-name = "lsp"
-version = "0.1.0"
-dependencies = [
- "core",
- "log",
- "lsp-types",
- "miette",
- "ropey",
- "serde",
- "serde_json",
- "toml",
- "walkdir",
-]
 
 [[package]]
 name = "lsp-types"
@@ -382,15 +391,6 @@ name = "once_cell_polyfill"
 version = "1.70.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
-
-[[package]]
-name = "parser"
-version = "0.1.0"
-dependencies = [
- "ariadne",
- "chumsky",
- "divan",
-]
 
 [[package]]
 name = "pathdiff"
@@ -470,19 +470,20 @@ version = "0.1.0"
 dependencies = [
  "ariadne",
  "clap",
- "core",
  "etcetera",
+ "lib-core",
+ "lib-lsp",
+ "lib-parser",
  "log",
- "lsp",
  "lsp-types",
  "miette",
- "parser",
  "pathdiff",
  "ropey",
  "serde",
  "serde_json",
  "simplelog",
  "str_indices",
+ "thiserror",
  "toml",
  "walkdir",
 ]
@@ -643,6 +644,26 @@ checksum = "45c6481c4829e4cc63825e62c49186a34538b7b2750b73b266581ffb612fb5ed"
 dependencies = [
  "rustix",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "thiserror"
+version = "2.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "4288b5bcbc7920c07a1149a35cf9590a2aa808e0bc1eafaade0b80947865fbc4"
+dependencies = [
+ "thiserror-impl",
+]
+
+[[package]]
+name = "thiserror-impl"
+version = "2.0.18"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "ebc4ee7f67670e9b64d05fa4253e753e016c6c95ff35b89b7941d6b856dec1d5"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn",
 ]
 
 [[package]]

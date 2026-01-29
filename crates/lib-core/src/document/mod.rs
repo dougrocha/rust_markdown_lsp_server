@@ -1,0 +1,206 @@
+use std::ops::Range;
+
+use lib_parser::{InlineMarkdownNode, LinkType, MarkdownNode, Parser, Spanned, markdown_parser};
+use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Uri};
+use miette::Result;
+use references::{Reference, ReferenceKind};
+use ropey::Rope;
+
+pub mod references;
+
+#[derive(Debug, Clone)]
+pub struct Document {
+    pub uri: Uri,
+    pub id: Option<i32>,
+    pub version: i32,
+    pub content: Rope,
+    pub references: Vec<Reference>,
+    pub diagnostics: Vec<Diagnostic>,
+}
+
+impl Document {
+    pub fn new(uri: Uri, content: &str, version: i32) -> Result<Self> {
+        let mut s = Self {
+            id: Self::extract_id_from_uri(&uri),
+            uri,
+            version,
+            content: Rope::from_str(content),
+            references: Vec::new(),
+            diagnostics: Vec::new(),
+        };
+        s.parse_and_analyze()?;
+
+        Ok(s)
+    }
+
+    pub fn extract_id_from_uri(uri: &Uri) -> Option<i32> {
+        let uri_str = uri.to_string();
+        let dash_index = uri_str.find('-')?;
+        let id_str = &uri_str[..dash_index];
+
+        id_str.parse::<i32>().ok()
+    }
+
+    pub fn update(&mut self, content: &str, version: i32) -> Result<()> {
+        self.content = Rope::from_str(content);
+        self.version = version;
+        self.parse_and_analyze()?;
+        Ok(())
+    }
+
+    pub fn get_reference_at_position(&self, position: Position) -> Option<&Reference> {
+        self.references
+            .iter()
+            .find(|reference| reference.contains_position(position))
+    }
+
+    fn parse_and_analyze(&mut self) -> Result<()> {
+        self.references.clear();
+        self.diagnostics.clear();
+
+        let input = self.content.slice(..).to_string();
+
+        let (parsed_markdown, errors) = markdown_parser().parse(&input).into_output_errors();
+        for err in errors {
+            self.diagnostics.push(Diagnostic {
+                range: self.byte_to_lsp_range(&err.span().into_range()),
+                severity: Some(DiagnosticSeverity::WARNING),
+                code: None,
+                code_description: None,
+                source: Some("parser".to_string()),
+                message: err.reason().to_string(),
+                related_information: None,
+                tags: None,
+                data: None,
+            });
+        }
+
+        let Some(parsed_markdown) = parsed_markdown else {
+            log::debug!("Failed to parse");
+            return Ok(());
+        };
+
+        let body = parsed_markdown.body;
+        body.into_iter().for_each(|spanned| {
+            let Spanned(markdown, span) = spanned;
+            match markdown {
+                MarkdownNode::Header { level, content } => {
+                    let reference = Reference {
+                        kind: ReferenceKind::Header {
+                            level,
+                            content: content.to_string(),
+                        },
+                        range: self.byte_to_lsp_range(&span.into_range()),
+                    };
+                    self.references.push(reference);
+                }
+                MarkdownNode::Paragraph(inlines) => {
+                    for inline in inlines {
+                        let Spanned(inline_markdown, inline_span) = inline;
+
+                        if let InlineMarkdownNode::Link(link) = inline_markdown {
+                            match link {
+                                LinkType::InlineLink { text, uri, header } => {
+                                    let reference = Reference {
+                                        kind: ReferenceKind::Link {
+                                            target: uri.to_string(),
+                                            alt_text: text.to_string(),
+                                            title: None,
+                                            header: header.map(|x| x.to_string()),
+                                        },
+                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                    };
+                                    self.references.push(reference);
+                                }
+                                LinkType::WikiLink {
+                                    target,
+                                    display_text,
+                                    header,
+                                } => {
+                                    let reference = Reference {
+                                        kind: ReferenceKind::WikiLink {
+                                            target: target.to_string(),
+                                            alias: display_text.map(|d| d.to_string()),
+                                            header: header.map(|x| x.to_string()),
+                                        },
+                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                    };
+                                    self.references.push(reference);
+                                }
+                            }
+                        }
+                    }
+                }
+                MarkdownNode::ListItem {
+                    checkbox: _,
+                    content,
+                } => {
+                    // Process links inside list item content (same as paragraph)
+                    for inline in content {
+                        let Spanned(inline_markdown, inline_span) = inline;
+
+                        if let InlineMarkdownNode::Link(link) = inline_markdown {
+                            match link {
+                                LinkType::InlineLink { text, uri, header } => {
+                                    let reference = Reference {
+                                        kind: ReferenceKind::Link {
+                                            target: uri.to_string(),
+                                            alt_text: text.to_string(),
+                                            title: None,
+                                            header: header.map(|x| x.to_string()),
+                                        },
+                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                    };
+                                    self.references.push(reference);
+                                }
+                                LinkType::WikiLink {
+                                    target,
+                                    display_text,
+                                    header,
+                                } => {
+                                    let reference = Reference {
+                                        kind: ReferenceKind::WikiLink {
+                                            target: target.to_string(),
+                                            alias: display_text.map(|d| d.to_string()),
+                                            header: header.map(|x| x.to_string()),
+                                        },
+                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                    };
+                                    self.references.push(reference);
+                                }
+                            }
+                        }
+                    }
+                }
+                _ => {}
+            }
+        });
+
+        Ok(())
+    }
+
+    pub fn byte_to_lsp_range(&self, span: &Range<usize>) -> lsp_types::Range {
+        let start_line = self.content.byte_to_line(span.start);
+        let end_line = self.content.byte_to_line(span.end);
+
+        let line_start_char_idx = self.content.line_to_char(start_line);
+        let line_end_char_idx = self.content.line_to_char(end_line);
+
+        let start_char = self.content.byte_to_char(span.start) - line_start_char_idx;
+        let end_char = self.content.byte_to_char(span.end) - line_end_char_idx;
+
+        lsp_types::Range::new(
+            Position::new(start_line as u32, start_char as u32),
+            Position::new(end_line as u32, end_char as u32),
+        )
+    }
+
+    pub fn lsp_range_to_byte(&self, range: &lsp_types::Range) -> Range<usize> {
+        let start_byte =
+            self.content.line_to_byte(range.start.line as usize) + range.start.character as usize;
+        let end_byte =
+            self.content.line_to_byte(range.end.line as usize) + range.end.character as usize;
+
+        start_byte..end_byte
+    }
+}

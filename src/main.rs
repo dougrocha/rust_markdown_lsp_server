@@ -4,7 +4,7 @@ use etcetera::{BaseStrategy, choose_base_strategy};
 use miette::{IntoDiagnostic, Result};
 use simplelog::*;
 
-use lsp::run_lsp;
+use lib_lsp::run_lsp;
 
 fn main() -> Result<()> {
     create_logger()?;

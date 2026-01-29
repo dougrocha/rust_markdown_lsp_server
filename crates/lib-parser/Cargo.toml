@@ -1,0 +1,15 @@
+[package]
+name = "lib-parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+ariadne = { workspace = true }
+chumsky = { workspace = true }
+
+[dev-dependencies]
+divan = "0.1.17"
+
+[[bench]]
+name = "parser"
+harness = false
