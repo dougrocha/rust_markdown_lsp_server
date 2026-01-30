@@ -1,5 +1,5 @@
 use lsp_types::{Position, Range, Uri};
-use miette::{Context, Result, miette};
+use miette::{Context, IntoDiagnostic, Result, miette};
 use ropey::RopeSlice;
 
 use lib_core::{
@@ -34,15 +34,17 @@ pub fn resolve_target_uri(lsp: &Server, document: &Document, target: &str) -> Re
 
 /// Normalizes header content to match the format used in completions
 pub fn normalize_header_content(content: &str) -> String {
-    let mut result = content
-        .to_lowercase()
-        .chars()
-        .map(|c| if c.is_alphanumeric() { c } else { '-' })
-        .collect::<String>();
+    let mut result = String::with_capacity(content.len());
+    let mut last_was_dash = false;
 
-    // Replace multiple consecutive dashes with single dash
-    while result.contains("--") {
-        result = result.replace("--", "-");
+    for c in content.to_lowercase().chars() {
+        if c.is_alphanumeric() {
+            result.push(c);
+            last_was_dash = false;
+        } else if !last_was_dash {
+            result.push('-');
+            last_was_dash = true;
+        }
     }
 
     result.trim_matches('-').to_string()
@@ -85,19 +87,16 @@ pub fn generate_link_text(
     use lib_core::path::{extract_filename_stem, find_relative_path};
 
     match config.generation_style {
-        LinkGenerationStyle::Filename => {
-            // Always use stem (no .md extension) for filename-based links
-            let filename = extract_filename_stem(target_uri)
-                .ok_or_else(|| miette!("Failed to extract filename from URI"))?;
-            Ok(filename)
-        }
-        LinkGenerationStyle::Relative => find_relative_path(source_uri, target_uri),
+        // Always use stem (no .md extension) for filename-based links
+        LinkGenerationStyle::Filename => Ok(extract_filename_stem(target_uri)
+            .ok_or_else(|| miette!("Failed to extract filename stem from {:?}", target_uri))?),
+        LinkGenerationStyle::Relative => Ok(find_relative_path(source_uri, target_uri)?),
         LinkGenerationStyle::Absolute => {
             if let Some(root) = workspace_root {
                 generate_absolute_path(root, target_uri)
             } else {
                 // Fallback to relative if no workspace root
-                find_relative_path(source_uri, target_uri)
+                Ok(find_relative_path(source_uri, target_uri).into_diagnostic()?)
             }
         }
     }
@@ -107,29 +106,34 @@ pub fn generate_link_text(
 fn generate_absolute_path(root: &Uri, target: &Uri) -> Result<String> {
     let root_path = root
         .to_file_path()
-        .ok_or_else(|| miette!("Failed to convert root to path"))?;
+        .ok_or_else(|| miette!("Failed to convert root URI to path: {:?}", root))?;
 
     let target_path = target
         .to_file_path()
-        .ok_or_else(|| miette!("Failed to convert target to path"))?;
+        .ok_or_else(|| miette!("Failed to convert target URI to path: {:?}", target))?;
 
-    let relative = target_path
-        .strip_prefix(&root_path)
-        .map_err(|_| miette!("Target is not within workspace root"))?;
+    let relative = target_path.strip_prefix(&root_path).map_err(|_| {
+        miette!(
+            "Target URI {:?} is not within workspace root {:?}",
+            target,
+            root
+        )
+    })?;
 
-    Ok(format!("/{}", relative.to_string_lossy()))
+    // Normalize this to forward slashes
+    let components: Vec<&str> = relative
+        .components()
+        .filter_map(|c| match c {
+            std::path::Component::Normal(os_str) => os_str.to_str(),
+            _ => None,
+        })
+        .collect();
+
+    Ok(format!("/{}", components.join("/")))
 }
 
 /// Extracts the content of a header section from the provided references.
-///
-/// A header section includes all content from the target header until:
-/// - The next header of the same or higher level (lower number)
-/// - The end of the document
-///
-/// Examples:
-/// - H1 section continues until the next H1 or end of file
-/// - H2 section continues until the next H1 or H2
-/// - H3 section continues until the next H1, H2, or H3
+/// NOTE: Assumes `links` are sorted by position (top to bottom).
 pub fn extract_header_section<'a>(
     header: &str,
     links: &[Reference],
@@ -137,8 +141,11 @@ pub fn extract_header_section<'a>(
 ) -> (Option<RopeSlice<'a>>, Range) {
     let mut start_position: Option<Position> = None;
     let mut end_position: Option<Position> = None;
-
     let mut header_level: Option<usize> = None;
+
+    // Optimization: Pre-calculate normalized target once
+    let target_content = header.strip_prefix('#').unwrap_or(header);
+    let normalized_target = normalize_header_content(target_content);
 
     for link in links {
         if let ReferenceKind::Header {
@@ -146,25 +153,23 @@ pub fn extract_header_section<'a>(
             content: header_content,
         } = &link.kind
         {
-            // Check if this header matches our target header
-            let target_content = header.strip_prefix('#').unwrap_or(header);
+            // Logic: Find start
+            if start_position.is_none() {
+                let matches_header = *header_content == target_content
+                    || normalize_header_content(header_content) == normalized_target;
 
-            // Try multiple matching strategies:
-            // 1. Exact match with stripped prefix
-            // 2. Normalized target vs original content
-            // 3. Normalized target vs normalized content
-            let matches_header = *header_content == target_content
-                || normalize_header_content(header_content) == target_content
-                || normalize_header_content(header_content)
-                    == normalize_header_content(target_content);
-
-            if start_position.is_none() && matches_header {
-                // Found the start of our target header section
-                start_position = Some(link.range.start);
-                header_level = Some(*level);
+                if matches_header {
+                    start_position = Some(link.range.start);
+                    header_level = Some(*level);
+                }
                 continue;
-            } else if start_position.is_some() && header_level.is_some_and(|h| *level <= h) {
-                // Found a header of higher level (lower number) - this ends our section
+            }
+
+            // Logic: Find end (must be after start, which loop order guarantees if sorted)
+            // Stop at any header that is same level or higher (smaller number)
+            if let Some(current_level) = header_level
+                && *level <= current_level
+            {
                 end_position = Some(link.range.start);
                 break;
             }
@@ -172,20 +177,29 @@ pub fn extract_header_section<'a>(
     }
 
     match (start_position, end_position) {
-        (Some(start), Some(end)) if start < end && (end.line as usize) <= content.len_bytes() => {
-            let start_idx = content.lsp_position_to_byte(start);
-            let end_idx = content.lsp_position_to_byte(end);
-            (
-                Some(content.byte_slice(start_idx..end_idx)),
-                Range::new(start, end),
-            )
+        (Some(start), Some(end)) if start < end && (end.line as usize) <= content.len_lines() => {
+            // Safety check: ensure positions are valid for this content
+            if let (Some(start_byte), Some(end_byte)) = (
+                content.try_lsp_position_to_byte(start),
+                content.try_lsp_position_to_byte(end),
+            ) {
+                (
+                    Some(content.byte_slice(start_byte..end_byte)),
+                    Range::new(start, end),
+                )
+            } else {
+                (None, Range::default())
+            }
         }
-        (Some(start), None) if (start.line as usize) < content.len_bytes() => {
-            let start_idx = content.lsp_position_to_byte(start);
-            (
-                Some(content.byte_slice(start_idx..)),
-                Range::new(start, Position::new(content.len_lines() as u32, 0)),
-            )
+        (Some(start), None) if (start.line as usize) < content.len_lines() => {
+            if let Some(start_byte) = content.try_lsp_position_to_byte(start) {
+                (
+                    Some(content.byte_slice(start_byte..)),
+                    Range::new(start, Position::new(content.len_lines() as u32, 0)),
+                )
+            } else {
+                (None, Range::default())
+            }
         }
         _ => (None, Range::default()),
     }
