@@ -1,7 +1,7 @@
 use chumsky::prelude::*;
 
 use markdown::{footnote_definition_parser, header_parser, list_item_parser, paragraph_parser};
-use yaml::{yaml_parser, Frontmatter};
+use yaml::{Frontmatter, yaml_parser};
 
 pub use chumsky::Parser;
 
@@ -57,6 +57,10 @@ pub enum LinkType<'a> {
         target: &'a str,
         display_text: Option<&'a str>,
         header: Option<&'a str>,
+    },
+    ImageLink {
+        text: &'a str,
+        uri: &'a str,
     },
 }
 

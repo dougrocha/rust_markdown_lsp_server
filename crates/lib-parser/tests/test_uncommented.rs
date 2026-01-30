@@ -1,4 +1,3 @@
-use chumsky::Parser;
 use common::compare;
 use lib_parser::{InlineMarkdownNode, LinkType, MarkdownNode, markdown::*};
 

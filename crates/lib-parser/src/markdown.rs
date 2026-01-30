@@ -192,34 +192,24 @@ pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, Par
 }
 
 pub fn image_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
-    let alt_text = any()
+    let alt = any()
         .filter(|c: &char| *c != ']' && *c != '\n')
         .repeated()
-        .at_least(1)
-        .to_slice()
-        .map(|alias: &'a str| alias.trim())
-        .labelled("Alt Text Parser");
+        .to_slice();
 
-    // TODO: Add this to diagnostic errors
     let uri = any()
         .filter(|c: &char| *c != ')' && *c != '\n')
         .repeated()
-        .to_slice()
-        .map(|alias: &'a str| alias.trim())
-        .labelled("Image URI Parser");
+        .at_least(1)
+        .to_slice();
 
     just("![")
-        .ignore_then(alt_text)
-        .then_ignore(just(']'))
-        .then(just('(').ignore_then(uri).then_ignore(just(')')))
-        .map(|(alt_text, uri)| {
-            InlineMarkdownNode::Link(LinkType::InlineLink {
-                text: alt_text,
-                uri,
-                header: None,
-            })
-        })
-        .labelled("Image Parser")
+        .ignore_then(alt)
+        .then_ignore(just("]("))
+        .then(uri)
+        .then_ignore(just(')'))
+        .map(|(text, uri)| InlineMarkdownNode::Link(LinkType::ImageLink { text, uri }))
+        .labelled("Image")
 }
 
 pub fn plain_text_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
@@ -243,8 +233,8 @@ pub fn plain_text_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a
 }
 
 // Line-bounded plain text parser for use in list items (stops at single newline)
-pub fn line_plain_text_parser<'a>(
-) -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
+pub fn line_plain_text_parser<'a>()
+-> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
     let stop_condition = choice((
         just("#"),
         just("["),
