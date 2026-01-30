@@ -66,7 +66,7 @@ impl CompletionIntent<'_> {
                 && trigger == "#"
             {
                 let (file_path, link_type) =
-                    extract_file_and_link_type_from_context(document, byte_pos)?;
+                    extract_file_and_link_type_from_context(document, byte_pos.saturating_sub(1))?;
 
                 return Some(CompletionIntent::Header(HeaderContext {
                     file_path,
