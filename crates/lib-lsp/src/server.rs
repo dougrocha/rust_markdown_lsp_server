@@ -1,5 +1,5 @@
 use lsp_types::{ClientCapabilities, Uri, WorkspaceFolder};
-use miette::{Context, IntoDiagnostic, Result, miette};
+use miette::Result;
 use std::collections::HashMap;
 
 use lib_core::{
@@ -61,7 +61,7 @@ impl DocumentStore {
 pub struct Server {
     pub documents: DocumentStore,
     pub config: Config,
-    root: Option<Uri>,
+    workspace_roots: Vec<Uri>,
     client_capabilities: Option<ClientCapabilities>,
 }
 
@@ -71,22 +71,23 @@ impl Server {
     }
 
     /// Load configuration from a file path
-    pub fn load_config<P: AsRef<std::path::Path>>(&mut self, config_path: P) -> Result<()> {
+    pub fn load_config<P: AsRef<std::path::Path>>(&mut self, config_path: P) {
         self.config = Config::from_file_or_default(config_path);
         log::info!("Loaded configuration: {:?}", self.config);
-        Ok(())
     }
 
-    pub fn set_root(&mut self, uri: Uri) {
-        self.root = Some(uri);
+    pub fn insert_root(&mut self, uri: Uri) {
+        self.workspace_roots.push(uri);
     }
 
     pub fn set_client_capabilities(&mut self, capabilities: ClientCapabilities) {
         self.client_capabilities = Some(capabilities);
     }
 
-    pub fn root(&self) -> Option<&Uri> {
-        self.root.as_ref()
+    /// Returns the "primary" root (the first one opened), if any.
+    /// Useful for fallback scenarios, but prefer `get_workspace_root_for_uri`.
+    pub fn primary_root(&self) -> Option<&Uri> {
+        self.workspace_roots.first()
     }
 
     pub fn load_workspaces(
@@ -94,35 +95,68 @@ impl Server {
         workspace_folders: Option<Vec<WorkspaceFolder>>,
     ) -> Result<()> {
         let Some(folders) = workspace_folders else {
-            return Err(miette!("Workspaces were not provided."));
+            log::info!("No workspace folders provided - running in single-file mode.");
+            return Ok(());
         };
 
         for folder in folders {
-            let uri = &folder.uri;
-            // TODO: What happens when multiple workspaces are shown and I override the root
-            self.set_root(uri.clone());
+            let root_uri = folder.uri;
 
-            let path = uri.path();
-            let markdown_files = walkdir::WalkDir::new(path.as_str())
+            log::info!("Adding workspace root: {:?}", root_uri);
+            self.workspace_roots.push(root_uri.clone());
+
+            // 2. Scan the files in this specific root
+            let Some(root_path) = root_uri.to_file_path() else {
+                log::warn!("Skipping invalid workspace path: {:?}", root_uri);
+                continue;
+            };
+
+            let markdown_files = walkdir::WalkDir::new(&root_path)
                 .into_iter()
                 .filter_map(|entry| entry.ok())
-                .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "md"));
+                .filter(|entry| {
+                    let path = entry.path();
+                    path.is_file() && path.extension().is_some_and(|ext| ext == "md")
+                });
 
             for entry in markdown_files {
                 let entry_path = entry.path();
-                let contents = std::fs::read_to_string(entry_path)
-                    .into_diagnostic()
-                    .with_context(|| format!("Failed to read markdown file: {entry_path:?}"))?;
+                let contents = match std::fs::read_to_string(entry_path) {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log::debug!("Could not read file {:?}: {}", entry_path, e);
+                        continue;
+                    }
+                };
 
-                let uri = Uri::from_file_path(entry_path);
-
-                match uri {
-                    Some(uri) => self.documents.open_document(uri, 0, &contents)?,
-                    None => log::debug!("Failed to create URI from path: {:?}", entry_path),
+                if let Some(uri) = Uri::from_file_path(entry_path) {
+                    self.documents.open_document(uri, 0, &contents)?;
                 }
             }
         }
 
         Ok(())
+    }
+
+    /// Look at all workspaces and take the shortest root
+    ///
+    /// Sort by length ensures we get the most specific (deepest) folder if they are nested
+    pub fn get_workspace_root_for_uri(&self, document_uri: &Uri) -> Option<&Uri> {
+        if self.workspace_roots.len() == 1 {
+            return self.workspace_roots.first();
+        }
+
+        let doc_path = document_uri.to_file_path()?;
+
+        self.workspace_roots
+            .iter()
+            .filter(|root_uri| {
+                if let Some(root_path) = root_uri.to_file_path() {
+                    doc_path.starts_with(root_path)
+                } else {
+                    false
+                }
+            })
+            .max_by_key(|uri| uri.path().as_estr().as_str().len())
     }
 }

@@ -8,29 +8,16 @@ use lib_core::{
         references::{Reference, ReferenceKind},
     },
     get_document,
+    path::{extract_filename_stem, find_relative_path},
     text_buffer_conversions::TextBufferConversions,
     uri::UriExt,
 };
 
-use crate::{config, server::Server};
-
-/// Resolves a target path to a URI using configured link resolution strategy.
-///
-/// This now supports:
-/// - Filename-based resolution: "note" finds note.md anywhere in workspace
-/// - Relative paths: "./folder/note.md"
-/// - Absolute paths: "/docs/note.md" (from workspace root)
-pub fn resolve_target_uri(lsp: &Server, document: &Document, target: &str) -> Result<Uri> {
-    use crate::handlers::link_resolver;
-
-    link_resolver::resolve_link(
-        target,
-        document,
-        &lsp.config.links,
-        &lsp.documents,
-        lsp.root(),
-    )
-}
+use crate::{
+    config::{self, LinkGenerationStyle},
+    handlers::link_resolver::resolve_target_uri,
+    server::Server,
+};
 
 /// Normalizes header content to match the format used in completions
 pub fn normalize_header_content(content: &str) -> String {
@@ -83,9 +70,6 @@ pub fn generate_link_text(
     target_uri: &Uri,
     workspace_root: Option<&Uri>,
 ) -> Result<String> {
-    use crate::config::LinkGenerationStyle;
-    use lib_core::path::{extract_filename_stem, find_relative_path};
-
     match config.generation_style {
         // Always use stem (no .md extension) for filename-based links
         LinkGenerationStyle::Filename => Ok(extract_filename_stem(target_uri)
@@ -307,7 +291,7 @@ mod tests {
 
         let mut server = Server::new();
         let workspace_root = Uri::from_str("file:///workspace").unwrap();
-        server.set_root(workspace_root);
+        server.insert_root(workspace_root);
 
         let document_uri = Uri::from_str("file:///workspace/docs/test.md").unwrap();
         let document = Document::new(document_uri.clone(), "# Test", 1).unwrap();

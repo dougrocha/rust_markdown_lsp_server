@@ -1,3 +1,5 @@
+pub mod error_codes;
+
 use std::io::{BufRead, Write};
 
 use miette::{Context, IntoDiagnostic, Result, miette};

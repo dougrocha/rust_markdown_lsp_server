@@ -7,8 +7,7 @@ use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range};
 use miette::{Context, Result};
 
 use crate::{
-    helpers::{normalize_header_content, resolve_target_uri},
-    server::Server,
+    handlers::link_resolver::resolve_target_uri, helpers::normalize_header_content, server::Server,
 };
 
 pub fn process_goto_definition(
@@ -20,19 +19,17 @@ pub fn process_goto_definition(
 
     let document = get_document!(lsp, &uri);
 
-    let reference = document.get_reference_at_position(position);
-
-    let Some(reference) = reference else {
-        return Err(miette::miette!("Definition not found"));
-    };
+    let reference = document
+        .get_reference_at_position(position)
+        .context("No reference found at cursor position")?;
 
     match &reference.kind {
         ReferenceKind::Link { target, header, .. }
         | ReferenceKind::WikiLink { target, header, .. } => {
-            let (document, range) = find_definition(lsp, document, target, header.as_deref())?;
+            let (target_doc, range) = find_definition(lsp, document, target, header.as_deref())?;
 
-            Ok(Some(GotoDefinitionResponse::from(Location {
-                uri: document.uri.clone(),
+            Ok(Some(GotoDefinitionResponse::Scalar(Location {
+                uri: target_doc.uri.clone(),
                 range,
             })))
         }
@@ -46,33 +43,39 @@ fn find_definition<'a>(
     target: &str,
     header: Option<&str>,
 ) -> Result<(&'a Document, Range)> {
-    let file_path = resolve_target_uri(lsp, document, target)?;
+    let target_uri = resolve_target_uri(lsp, document, target)?;
+    let target_doc = get_document!(lsp, &target_uri);
 
-    let document = get_document!(lsp, &file_path);
+    let Some(header_text) = header else {
+        return Ok((target_doc, Range::default()));
+    };
 
-    let reference = document.references.iter().find(|reference| {
+    let target_content = header_text.strip_prefix('#').unwrap_or(header_text);
+    let normalized_target = normalize_header_content(target_content);
+
+    let reference = target_doc.references.iter().find(|reference| {
         let ReferenceKind::Header { content, .. } = &reference.kind else {
             return false;
         };
 
-        if header.is_none() {
+        if content == target_content {
             return true;
         }
 
-        let target_header = header.unwrap();
-        let target_content = target_header.strip_prefix('#').unwrap_or(target_header);
+        let normalized_content = normalize_header_content(content);
 
-        // Try multiple matching strategies:
-        // 1. Exact match
-        // 2. Normalized target vs original content
-        // 3. Normalized target vs normalized content
-        *content == target_content
-            || normalize_header_content(content) == target_content
-            || normalize_header_content(content) == normalize_header_content(target_content)
+        normalized_content == target_content || normalized_content == normalized_target
     });
 
     match reference {
-        Some(reference) => Ok((document, reference.range)),
-        None => Err(miette::miette!("Definition not found")),
+        Some(reference) => Ok((target_doc, reference.range)),
+        None => {
+            log::warn!(
+                "Header '#{}' not found in document '{}'. Falling back to file start.",
+                target_content,
+                target
+            );
+            Ok((target_doc, Range::default()))
+        }
     }
 }

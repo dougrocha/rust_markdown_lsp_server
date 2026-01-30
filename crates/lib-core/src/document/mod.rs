@@ -127,6 +127,7 @@ impl Document {
                                     };
                                     self.references.push(reference);
                                 }
+                                LinkType::ImageLink { text, uri } => todo!(),
                             }
                         }
                     }
@@ -168,6 +169,7 @@ impl Document {
                                     };
                                     self.references.push(reference);
                                 }
+                                LinkType::ImageLink { text, uri } => todo!(),
                             }
                         }
                     }

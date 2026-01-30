@@ -13,7 +13,7 @@ pub fn get_parent_path(uri: &Uri) -> Option<String> {
     path.parent().map(|p| p.to_string_lossy().into_owned())
 }
 
-pub fn combine_and_normalize(source: &Uri, target: &Uri) -> Result<Uri, PathError> {
+pub fn combine_and_normalize(source: &Uri, target: &str) -> Result<Uri, PathError> {
     let source_path = source
         .to_file_path()
         .ok_or_else(|| PathError::InvalidUri(source.to_string()))?;
@@ -22,7 +22,7 @@ pub fn combine_and_normalize(source: &Uri, target: &Uri) -> Result<Uri, PathErro
         .parent()
         .ok_or_else(|| PathError::NoParent(source_path.to_path_buf()))?;
 
-    let combined_path = parent_path.join(target.as_str());
+    let combined_path = parent_path.join(target);
 
     let path = combined_path.canonicalize().map_err(PathError::Io)?;
 

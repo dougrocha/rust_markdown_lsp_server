@@ -206,13 +206,15 @@ fn complete_document_links(
 ) -> Option<Vec<CompletionItem>> {
     let mut completions: Vec<CompletionItem> = vec![];
 
+    let source_root = lsp.get_workspace_root_for_uri(&document.uri);
+
     for doc in lsp.documents.get_documents() {
         // Generate link text based on config
         let link_text = match helpers::generate_link_text(
             &lsp.config.links,
             &document.uri,
             &doc.uri,
-            lsp.root(),
+            source_root,
         ) {
             Ok(text) => text,
             Err(e) => {
@@ -256,12 +258,14 @@ fn complete_headers(
 ) -> Option<Vec<CompletionItem>> {
     let mut completions: Vec<CompletionItem> = vec![];
 
+    let source_root = lsp.get_workspace_root_for_uri(&document.uri);
+
     let file_uri = match link_resolver::resolve_link(
         ctx.file_path,
         document,
         &lsp.config.links,
         &lsp.documents,
-        lsp.root(),
+        source_root,
     ) {
         Ok(uri) => uri,
         Err(e) => {
@@ -279,7 +283,7 @@ fn complete_headers(
         if let ReferenceKind::Header { level, content } = &doc_ref.kind {
             let header_id = normalize_header_content(content);
 
-            let label = content.to_uppercase();
+            let label = content.clone();
 
             let insert_text = ctx
                 .link_type

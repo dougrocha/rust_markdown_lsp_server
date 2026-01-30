@@ -40,6 +40,8 @@ fn handle_non_range(
     let document = get_document!(lsp, uri);
     let slice = document.content.slice(..);
 
+    let source_root = lsp.get_workspace_root_for_uri(&document.uri);
+
     let Some(reference) = document.get_reference_at_position(range.start) else {
         return Ok(Some(vec![]));
     };
@@ -93,7 +95,7 @@ fn handle_non_range(
                                 &lsp.config.links,
                                 uri,
                                 &new_file_uri,
-                                lsp.root(),
+                                source_root,
                             )
                             .unwrap_or_else(|_| new_file_uri.to_string());
 

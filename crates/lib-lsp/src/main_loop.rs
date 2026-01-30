@@ -1,15 +1,13 @@
 use lsp_types::{
-    error_codes,
+    InitializeParams, error_codes,
     notification::{self, Notification as LspNotification},
     request::{self, Request as LspRequest},
-    InitializeParams,
 };
-use miette::{miette, Context, IntoDiagnostic, Result};
+use miette::{Result, miette};
 use std::io::{self, BufRead, Write};
 
-use crate::dispatch_lsp_notification;
 use crate::{
-    dispatch_lsp_request,
+    Server, dispatch_lsp_request,
     handlers::{
         code_action::process_code_action,
         completion::{completion_resolve::process_completion_resolve, process_completion},
@@ -23,17 +21,15 @@ use crate::{
     },
     messages::{Message, Notification, Request, Response},
     rpc::{encode_message, handle_message, write_msg},
-    Server,
 };
+use crate::{dispatch_lsp_notification, rpc};
 
 pub fn run_lsp() -> Result<()> {
     let (stdin, stdout) = (io::stdin(), io::stdout());
     let (mut reader, mut writer) = (stdin.lock(), stdout.lock());
 
     let mut lsp = Server::default();
-    if let Err(e) = lsp.load_config("rust-markdown-lsp.toml") {
-        log::warn!("Failed to load config: {}", e);
-    }
+    lsp.load_config("rust-markdown-lsp.toml");
 
     let init_params = handle_initialize(&mut reader, &mut writer)?;
     lsp.load_workspaces(init_params.workspace_folders)?;
@@ -116,9 +112,20 @@ where
     W: Write,
     F: FnOnce(&mut Server, R::Params) -> Result<R::Result>,
 {
-    let params: R::Params = serde_json::from_value(raw_request.params)
-        .into_diagnostic()
-        .context("Failed to deserialize request params")?;
+    let params = match serde_json::from_value::<R::Params>(raw_request.params) {
+        Ok(p) => p,
+        Err(e) => {
+            // If deserialization fails, send an error response.
+            let err_msg = format!("Invalid request parameters: {}", e);
+            log::warn!("{}", err_msg);
+
+            let response =
+                Response::from_error(raw_request.id, rpc::error_codes::INVALID_PARAMS, err_msg);
+            let msg = encode_message(&response)?;
+            write_msg(writer, &msg)?;
+            return Ok(());
+        }
+    };
 
     let response = match handler(lsp, params) {
         Ok(result) => Response::from_ok(raw_request.id, result),
@@ -143,9 +150,17 @@ where
     R: LspNotification,
     F: FnOnce(&mut Server, R::Params) -> Result<()>,
 {
-    let params: R::Params = serde_json::from_value(raw_notification.params)
-        .into_diagnostic()
-        .context("Failed to deserialize request params")?;
+    let params = match serde_json::from_value::<R::Params>(raw_notification.params) {
+        Ok(p) => p,
+        Err(e) => {
+            log::warn!(
+                "Invalid notification parameters [method: {}]: {}",
+                R::METHOD,
+                e
+            );
+            return Ok(());
+        }
+    };
 
     if let Err(err) = handler(lsp, params) {
         log::error!("Notification failed [method: {}]: {:?}", R::METHOD, err);

@@ -1,6 +1,5 @@
 use lsp_types::Uri;
-use miette::{Context, IntoDiagnostic, Result, miette};
-use std::str::FromStr;
+use miette::{Context, Result, miette};
 
 use lib_core::{
     document::Document,
@@ -10,12 +9,19 @@ use lib_core::{
 
 use crate::{config::LinkConfig, server::DocumentStore};
 
+pub fn resolve_target_uri(lsp: &crate::Server, document: &Document, target: &str) -> Result<Uri> {
+    let active_root = lsp.get_workspace_root_for_uri(&document.uri);
+
+    resolve_link(
+        target,
+        document,
+        &lsp.config.links,
+        &lsp.documents,
+        active_root,
+    )
+}
+
 /// Main entry point for link resolution
-///
-/// Resolution order:
-/// 1. If target looks like a path (contains /), resolve as path
-/// 2. If filename resolution enabled, try to find by filename
-/// 3. Fallback to treating as relative path
 pub fn resolve_link(
     target: &str,
     source_doc: &Document,
@@ -23,31 +29,28 @@ pub fn resolve_link(
     documents: &DocumentStore,
     workspace_root: Option<&Uri>,
 ) -> Result<Uri> {
-    // Step 1: Check if it's path syntax
     if is_path_syntax(target) {
         return resolve_as_path(target, source_doc, workspace_root);
     }
 
-    // Step 2: Try filename resolution (if enabled)
     if config.enable_filename_resolution
         && let Some(resolved) = resolve_by_filename(target, documents, config)
     {
         return Ok(resolved);
     }
 
-    // Step 3: Fallback to relative path
     resolve_as_path(target, source_doc, workspace_root)
 }
 
-/// Check if target uses path syntax (has slashes or path prefixes)
+/// Check if target uses path syntax
 fn is_path_syntax(target: &str) -> bool {
     target.starts_with('/') ||      // Absolute: /docs/note.md
     target.starts_with("./") ||     // Relative: ./note.md
     target.starts_with("../") ||    // Relative parent: ../note.md
-    target.contains('/') // Has path separator: folder/note.md
+    target.contains('/') || // Has path separator: folder/note.md
+    target.contains('\\') // Windows Specific
 }
 
-/// Resolve target as a file path (relative or absolute)
 fn resolve_as_path(
     target: &str,
     source_doc: &Document,
@@ -71,12 +74,7 @@ fn resolve_as_path(
         Uri::from_file_path(target_path)
             .ok_or_else(|| miette!("Failed to create URI from absolute path: {}", target))
     } else {
-        // Relative path - resolve relative to source document
-        let target_uri =
-            Uri::from_str(target).map_err(|e| miette!("Invalid URI: {} - {}", target, e))?;
-
-        combine_and_normalize(&source_doc.uri, &target_uri)
-            .context("Failed to resolve a relative path.")
+        combine_and_normalize(&source_doc.uri, target).context("Failed to resolve a relative path.")
     }
 }
 
@@ -90,16 +88,18 @@ fn resolve_by_filename(
     documents: &DocumentStore,
     _config: &LinkConfig,
 ) -> Option<Uri> {
-    // Always strip .md extension from target for comparison
     let target_stem = target.strip_suffix(".md").unwrap_or(target);
 
     let normalized_target = normalize_for_matching(target_stem);
-
     documents.get_documents().find_map(|doc| {
         let doc_filename = extract_filename_stem(&doc.uri)?;
         let normalized_doc = normalize_for_matching(&doc_filename);
 
-        (normalized_target == normalized_doc).then(|| doc.uri.clone())
+        if normalized_target == normalized_doc {
+            Some(doc.uri.clone())
+        } else {
+            None
+        }
     })
 }
 
@@ -117,7 +117,7 @@ fn normalize_for_matching(s: &str) -> String {
     s.to_lowercase()
         .chars()
         .map(|c| match c {
-            ' ' | '_' => '-',
+            ' ' | '_' | '-' => '-',
             c => c,
         })
         .collect()

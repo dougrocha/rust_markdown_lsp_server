@@ -9,7 +9,8 @@ use lsp_types::{Location, ReferenceParams, Uri};
 use miette::{Context, Result};
 
 use crate::{
-    helpers::{normalize_header_content, resolve_target_uri},
+    handlers::link_resolver::resolve_target_uri,
+    helpers::normalize_header_content,
     server::{DocumentStore, Server},
 };
 
