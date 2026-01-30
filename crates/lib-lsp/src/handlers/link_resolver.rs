@@ -1,5 +1,5 @@
 use lsp_types::Uri;
-use miette::{Result, miette};
+use miette::{Context, IntoDiagnostic, Result, miette};
 use std::str::FromStr;
 
 use lib_core::{
@@ -76,6 +76,7 @@ fn resolve_as_path(
             Uri::from_str(target).map_err(|e| miette!("Invalid URI: {} - {}", target, e))?;
 
         combine_and_normalize(&source_doc.uri, &target_uri)
+            .context("Failed to resolve a relative path.")
     }
 }
 
