@@ -1,4 +1,4 @@
-use std::ops::Range;
+use std::{fmt::Debug, ops::Range};
 
 use lib_parser::{InlineMarkdownNode, LinkType, MarkdownNode, Parser, Spanned, markdown_parser};
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Uri};
@@ -127,7 +127,9 @@ impl Document {
                                     };
                                     self.references.push(reference);
                                 }
-                                LinkType::ImageLink { text, uri } => todo!(),
+                                LinkType::ImageLink { text, uri } => {
+                                    log::debug!("Not currently supporting images")
+                                }
                             }
                         }
                     }
@@ -169,7 +171,9 @@ impl Document {
                                     };
                                     self.references.push(reference);
                                 }
-                                LinkType::ImageLink { text, uri } => todo!(),
+                                LinkType::ImageLink { text, uri } => {
+                                    log::debug!("Not currently supporting images")
+                                }
                             }
                         }
                     }

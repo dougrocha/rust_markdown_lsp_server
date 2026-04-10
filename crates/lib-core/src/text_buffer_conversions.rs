@@ -21,7 +21,7 @@ pub trait TextBufferConversions {
     }
 
     /// Converts a byte offset span (Range<usize>) to an LSP-compatible Range.
-    fn byte_to_lsp_range(&self, span: &Range<usize>) -> lsp_types::Range {
+    fn byte_range_to_lsp_range(&self, span: &Range<usize>) -> lsp_types::Range {
         // Default implementation using the position converters
         // Handle empty ranges at the end of the content correctly
         if span.is_empty() && span.start == self.byte_len() {

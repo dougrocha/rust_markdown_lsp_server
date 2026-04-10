@@ -10,40 +10,40 @@ resolver = "2"
 [workspace.dependencies]
 ariadne = "0.5.0"
 chumsky = "0.12.0"
-lib-core = { path = "./crates/lib-core", version = "0.1.0" }
+clap = "4.5.55"
 etcetera = "0.10.0"
-log = "0.4.26"
+lib-core = { path = "./crates/lib-core", version = "0.1.0" }
 lib-lsp = { path = "./crates/lib-lsp", version = "0.1.0" }
+lib-parser = { path = "./crates/lib-parser", version = "0.1.0" }
+log = "0.4.26"
 lsp-types = "0.97.0"
 miette = "7.5.0"
-lib-parser = { path = "./crates/lib-parser", version = "0.1.0" }
 pathdiff = "0.2.3"
 ropey = "1.6.1"
 serde = { version = "1.0.218", features = ["derive"] }
 serde_json = "1.0.140"
 serde_yaml = "0.9.34"
 simplelog = "0.12.2"
-str_indices = "0.4.4"
 thiserror = "2.0.18"
 toml = "0.8.19"
 walkdir = "2.5.0"
 
 [dependencies]
 ariadne = { workspace = true }
-clap = "4.5.55"
-lib-core = { workspace = true }
+chumsky = { workspace = true }
+clap = { workspace = true }
 etcetera = { workspace = true }
-log = { workspace = true }
+lib-core = { workspace = true }
 lib-lsp = { workspace = true }
+lib-parser = { workspace = true }
+log = { workspace = true }
 lsp-types = { workspace = true }
 miette.workspace = true
-lib-parser = { workspace = true }
 pathdiff = { workspace = true }
 ropey = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 simplelog = { workspace = true }
-str_indices = { workspace = true }
 thiserror = { workspace = true }
 toml = { workspace = true }
 walkdir = { workspace = true }

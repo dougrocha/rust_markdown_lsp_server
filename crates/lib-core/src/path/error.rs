@@ -25,4 +25,3 @@ pub enum PathError {
     #[diagnostic(code(path::uri_creation_failed))]
     UriCreation(String),
 }
-

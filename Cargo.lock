@@ -470,6 +470,7 @@ name = "rust_markdown_lsp"
 version = "0.1.0"
 dependencies = [
  "ariadne",
+ "chumsky",
  "clap",
  "etcetera",
  "lib-core",
@@ -483,7 +484,6 @@ dependencies = [
  "serde",
  "serde_json",
  "simplelog",
- "str_indices",
  "thiserror",
  "toml",
  "walkdir",
