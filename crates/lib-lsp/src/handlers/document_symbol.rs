@@ -80,7 +80,7 @@ fn build_symbol_tree(
         let symbol = DocumentSymbol {
             name: content.clone(),
             detail: None,
-            kind: symbol_kind_for_level(level),
+            kind: SymbolKind::STRING,
             tags: None,
             deprecated: None,
             range: section_ranges[current_idx],
@@ -96,15 +96,6 @@ fn build_symbol_tree(
     }
 
     symbols
-}
-
-fn symbol_kind_for_level(level: usize) -> SymbolKind {
-    match level {
-        1 => SymbolKind::FILE,
-        2 => SymbolKind::MODULE,
-        3 => SymbolKind::NAMESPACE,
-        _ => SymbolKind::STRING,
-    }
 }
 
 #[cfg(test)]
@@ -209,12 +200,5 @@ mod tests {
         assert!(symbols.is_empty());
     }
 
-    #[test]
-    fn test_symbol_kinds() {
-        assert_eq!(symbol_kind_for_level(1), SymbolKind::FILE);
-        assert_eq!(symbol_kind_for_level(2), SymbolKind::MODULE);
-        assert_eq!(symbol_kind_for_level(3), SymbolKind::NAMESPACE);
-        assert_eq!(symbol_kind_for_level(4), SymbolKind::STRING);
-        assert_eq!(symbol_kind_for_level(6), SymbolKind::STRING);
-    }
+
 }

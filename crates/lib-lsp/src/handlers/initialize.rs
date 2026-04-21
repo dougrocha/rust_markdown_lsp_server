@@ -4,6 +4,7 @@ use lsp_types::{
     DiagnosticOptions, DiagnosticRegistrationOptions, DiagnosticServerCapabilities,
     DocumentSymbolOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf,
     ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+    WorkspaceSymbolOptions,
 };
 use miette::{IntoDiagnostic, Result};
 
@@ -37,6 +38,10 @@ pub fn process_initialize(request: Request) -> Result<(Response, InitializeParam
             references_provider: Some(OneOf::Left(true)),
             document_symbol_provider: Some(OneOf::Right(DocumentSymbolOptions {
                 label: Some("Markdown Symbols".to_string()),
+                work_done_progress_options: Default::default(),
+            })),
+            workspace_symbol_provider: Some(OneOf::Right(WorkspaceSymbolOptions {
+                resolve_provider: Some(false),
                 work_done_progress_options: Default::default(),
             })),
             completion_provider: Some(CompletionOptions {

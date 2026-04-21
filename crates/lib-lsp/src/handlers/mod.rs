@@ -10,3 +10,4 @@ pub mod hover;
 pub mod initialize;
 pub mod link_resolver;
 pub mod references;
+pub mod workspace_symbol;
