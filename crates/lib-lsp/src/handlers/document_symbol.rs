@@ -199,6 +199,4 @@ mod tests {
         let symbols = build_symbol_tree(&headers, &section_ranges, &mut idx, 0);
         assert!(symbols.is_empty());
     }
-
-
 }

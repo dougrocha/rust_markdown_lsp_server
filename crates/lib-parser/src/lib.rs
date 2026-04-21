@@ -21,7 +21,6 @@ pub struct ParsedMarkdown<'a> {
     pub body: Vec<Spanned<MarkdownNode<'a>>>,
 }
 
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum MarkdownNode<'a> {
     Header {

@@ -4,14 +4,15 @@ use lib_core::{
 
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
-    CreateFile, DocumentChangeOperation, DocumentChanges, OneOf,
+    CreateFile, DeleteFile, DeleteFileOptions, DocumentChangeOperation, DocumentChanges, OneOf,
     OptionalVersionedTextDocumentIdentifier, Position, Range, ResourceOp, TextDocumentEdit,
     TextEdit, Uri, WorkspaceEdit,
 };
-use miette::{Context, Result, miette};
+use miette::{Context, Result};
 
 use crate::{
-    helpers::{extract_header_section, generate_link_text},
+    handlers::link_resolver::resolve_target_uri,
+    helpers::{extract_header_section, generate_link_text, get_content},
     server::Server,
 };
 
@@ -46,16 +47,19 @@ fn handle_non_range(
         return Ok(Some(vec![]));
     };
 
+    let parent_file_uri = get_parent_path(uri).unwrap();
+
     let mut actions: Vec<CodeActionOrCommand> = Vec::new();
     match &reference.kind {
-        ReferenceKind::Header { content, .. } => {
+        ReferenceKind::Header { content, level } => {
             let (header_content, range) =
                 extract_header_section(content, &document.references, slice);
+            let delta = 1i32 - *level as i32;
 
-            let parent = get_parent_path(uri).unwrap();
+            // TODO make file name be default to normalized header
             let new_file_uri = Uri::from_file_path(format!(
                 "{}/{}.md",
-                parent,
+                parent_file_uri,
                 (std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
@@ -81,7 +85,7 @@ fn handle_non_range(
                                 Position::new(0, 0),
                                 Position::new(slice.lines().count() as u32, 0),
                             ),
-                            header_content.to_string(),
+                            normalize_header_levels(&header_content.to_string(), delta),
                         ))],
                     }),
                     DocumentChangeOperation::Edit(TextDocumentEdit {
@@ -90,7 +94,6 @@ fn handle_non_range(
                             version: None,
                         },
                         edits: vec![OneOf::Left(TextEdit::new(range, {
-                            // Use configured link generation style
                             let link_text = generate_link_text(
                                 &lsp.config.links,
                                 uri,
@@ -121,8 +124,99 @@ fn handle_non_range(
                 );
             }
         }
-        _ => return Err(miette!("Other cases not handled yet.")),
+        ReferenceKind::Link { target, header, .. }
+        | ReferenceKind::WikiLink { target, header, .. } => {
+            let target_uri = resolve_target_uri(lsp, document, target)?;
+
+            let target_doc_content = get_content(lsp, document, target, header.as_deref())?;
+
+            let document_changes = DocumentChanges::Operations(vec![
+                DocumentChangeOperation::Edit(TextDocumentEdit {
+                    text_document: OptionalVersionedTextDocumentIdentifier {
+                        uri: uri.clone(),
+                        version: None,
+                    },
+                    edits: vec![OneOf::Left(TextEdit::new(
+                        reference.range,
+                        // TODO: normalize later
+                        target_doc_content,
+                    ))],
+                }),
+                DocumentChangeOperation::Op(ResourceOp::Delete(DeleteFile {
+                    uri: target_uri,
+                    options: Some(DeleteFileOptions {
+                        ignore_if_not_exists: Some(false),
+                        recursive: None,
+                        annotation_id: Some("Inserting ".to_string()),
+                    }),
+                })),
+            ]);
+
+            let workspace_edit = WorkspaceEdit {
+                changes: None,
+                document_changes: Some(document_changes),
+                change_annotations: None,
+            };
+
+            actions.push(
+                CodeAction {
+                    title: "Inline section".to_owned(),
+                    kind: Some(CodeActionKind::REFACTOR_INLINE),
+                    edit: Some(workspace_edit),
+                    ..Default::default()
+                }
+                .into(),
+            );
+        }
     }
 
     Ok(Some(actions))
+}
+
+fn normalize_header_levels(content: &str, delta: i32) -> String {
+    content
+        .split('\n')
+        .map(|line| {
+            let hashes = line.chars().take_while(|c| *c == '#').count();
+            if hashes == 0 || !line[hashes..].starts_with(' ') {
+                return line.to_string();
+            }
+            let new_level = (hashes as i32 + delta).max(1) as usize;
+            format!("{} {}", "#".repeat(new_level), &line[hashes + 1..])
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_normalize_already_h1() {
+        let content = "# Title\n\nSome text.";
+        assert_eq!(normalize_header_levels(content, 0), content);
+    }
+
+    #[test]
+    fn test_normalize_h3_to_h1() {
+        let input = "### My Section\n\nParagraph.\n\n#### Sub\n\nMore.";
+        let expected = "# My Section\n\nParagraph.\n\n## Sub\n\nMore.";
+        assert_eq!(normalize_header_levels(input, -2), expected);
+    }
+
+    #[test]
+    fn test_normalize_clamps_at_h1() {
+        // H2 with delta -5 should clamp to H1, not go negative
+        let input = "## Section\n\n### Child";
+        let expected = "# Section\n\n# Child";
+        assert_eq!(normalize_header_levels(input, -5), expected);
+    }
+
+    #[test]
+    fn test_normalize_ignores_non_headers() {
+        let input = "# Title\n\nThis has a #hashtag in it.\n\n## Sub";
+        let expected = "# Title\n\nThis has a #hashtag in it.\n\n# Sub";
+        assert_eq!(normalize_header_levels(input, -1), expected);
+    }
 }

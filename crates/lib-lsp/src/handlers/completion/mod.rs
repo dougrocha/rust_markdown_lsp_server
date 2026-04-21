@@ -315,7 +315,6 @@ fn has_closing_chars(document: &Document, byte_pos: usize, link_type: LinkType) 
         .get_reference_at_position(slice.byte_to_lsp_position(byte_pos))
         .is_some()
     {
-        tracing::debug!("HERE TRUE");
         return true;
     }
 

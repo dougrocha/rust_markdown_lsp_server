@@ -1,13 +1,14 @@
-# Header 1
+# Test 1
 
-## more content down here
+Some example content
 
-[README](./README.md)
+## More code for this file right?
 
-[README no file path](README)
+Nah JK
 
-[[README]]
+# Test 2 Header file
 
-[[README|READ ME PLEASE]]
+[test 1 header test](test#test-1)
 
-### TRIPLE HEADER
+[test 1 header test](test#test-1)
+

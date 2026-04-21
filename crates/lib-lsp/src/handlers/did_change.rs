@@ -16,8 +16,7 @@ pub fn process_did_change(lsp: &mut Server, params: DidChangeTextDocumentParams)
             lsp.documents.update_document(&uri, &text)?;
         } else {
             return Err(miette!(
-                "Incremental document changes are not yet supported. \
-     Please configure your editor to send full document updates."
+                "Incremental document changes are not yet supported.\nPlease configure your editor to send full document updates."
             ));
         }
     }

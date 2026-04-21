@@ -43,5 +43,3 @@ pub fn process_workspace_symbol(
 
     Ok(Some(WorkspaceSymbolResponse::Flat(symbols)))
 }
-
-

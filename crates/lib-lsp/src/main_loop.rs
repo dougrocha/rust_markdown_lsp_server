@@ -13,6 +13,7 @@ use crate::{
         completion::{completion_resolve::process_completion_resolve, process_completion},
         diagnostics::process_diagnostic,
         did_change::process_did_change,
+        did_close::process_did_close,
         did_open::process_did_open,
         document_symbol::process_document_symbol,
         goto_definition::process_goto_definition,
@@ -75,6 +76,7 @@ pub fn run_lsp() -> Result<()> {
                         dispatch_lsp_notification!(&mut lsp, notification, {
                             notification::DidOpenTextDocument => process_did_open,
                             notification::DidChangeTextDocument => process_did_change,
+                            notification::DidCloseTextDocument => process_did_close,
                         });
                     }
                 }

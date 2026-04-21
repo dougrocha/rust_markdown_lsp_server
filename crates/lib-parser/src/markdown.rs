@@ -200,13 +200,7 @@ pub fn image_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, Pa
 }
 
 pub fn plain_text_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
-    let stop_condition = choice((
-        just("#"),
-        just("["),
-        just("!["),
-        just("\n\n"),
-    ))
-    .rewind();
+    let stop_condition = choice((just("#"), just("["), just("!["), just("\n\n"))).rewind();
 
     any()
         .and_is(stop_condition.not())
@@ -220,13 +214,7 @@ pub fn plain_text_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a
 // Line-bounded plain text parser for use in list items (stops at single newline)
 pub fn line_plain_text_parser<'a>()
 -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, ParseError<'a>> {
-    let stop_condition = choice((
-        just("#"),
-        just("["),
-        just("!["),
-        just("\n"),
-    ))
-    .rewind();
+    let stop_condition = choice((just("#"), just("["), just("!["), just("\n"))).rewind();
 
     any()
         .and_is(stop_condition.not())
