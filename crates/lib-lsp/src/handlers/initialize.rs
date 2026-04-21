@@ -1,9 +1,9 @@
-use log::info;
+use tracing::info;
 use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions,
     DiagnosticOptions, DiagnosticRegistrationOptions, DiagnosticServerCapabilities,
-    HoverProviderCapability, InitializeParams, InitializeResult, OneOf, ServerCapabilities,
-    ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
+    DocumentSymbolOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf,
+    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
 };
 use miette::{IntoDiagnostic, Result};
 
@@ -35,6 +35,10 @@ pub fn process_initialize(request: Request) -> Result<(Response, InitializeParam
                 },
             )),
             references_provider: Some(OneOf::Left(true)),
+            document_symbol_provider: Some(OneOf::Right(DocumentSymbolOptions {
+                label: Some("Markdown Symbols".to_string()),
+                work_done_progress_options: Default::default(),
+            })),
             completion_provider: Some(CompletionOptions {
                 resolve_provider: Some(true),
                 trigger_characters: Some(vec![
@@ -54,7 +58,7 @@ pub fn process_initialize(request: Request) -> Result<(Response, InitializeParam
     };
     let result = serde_json::to_value(initialize_result).unwrap();
 
-    log::trace!("InitializeResult: {result:?}");
+    tracing::trace!("InitializeResult: {result:?}");
 
     Ok((
         Response::from_ok(request.id, Some(result)),

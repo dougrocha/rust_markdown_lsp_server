@@ -14,6 +14,7 @@ use crate::{
         diagnostics::process_diagnostic,
         did_change::process_did_change,
         did_open::process_did_open,
+        document_symbol::process_document_symbol,
         goto_definition::process_goto_definition,
         hover::process_hover,
         initialize::process_initialize,
@@ -39,7 +40,7 @@ pub fn run_lsp() -> Result<()> {
         match handle_message(&mut reader)? {
             Message::Request(request) => match request.method.as_str() {
                 "shutdown" => {
-                    log::info!("Shutting down");
+                    tracing::info!("Shutting down");
                     break;
                 }
                 _ => {
@@ -51,18 +52,19 @@ pub fn run_lsp() -> Result<()> {
                         request::ResolveCompletionItem => process_completion_resolve,
                         request::References => process_references,
                         request::DocumentDiagnosticRequest => process_diagnostic,
+                        request::DocumentSymbolRequest => process_document_symbol,
                     });
                 }
             },
             Message::Notification(notification) => {
-                log::trace!("textDocument/{}", notification.method);
+                tracing::trace!("textDocument/{}", notification.method);
 
                 match notification.method.as_str() {
                     "exit" => {
-                        log::trace!("Received exit notification");
+                        tracing::trace!("Received exit notification");
                     }
                     "initialized" => {
-                        log::trace!("Initialization confirmed!");
+                        tracing::trace!("Initialization confirmed!");
                     }
                     _ => {
                         dispatch_lsp_notification!(&mut lsp, notification, {
@@ -101,6 +103,7 @@ where
 
 /// Handles a typed LSP request by deserializing params, calling handler, and writing response.
 /// Called by the `dispatch_lsp_request!` macro.
+#[tracing::instrument(skip_all, fields(method = R::METHOD))]
 pub(crate) fn handle_request<R, W, F>(
     lsp: &mut Server,
     raw_request: Request,
@@ -117,7 +120,7 @@ where
         Err(e) => {
             // If deserialization fails, send an error response.
             let err_msg = format!("Invalid request parameters: {}", e);
-            log::warn!("{}", err_msg);
+            tracing::warn!("{}", err_msg);
 
             let response =
                 Response::from_error(raw_request.id, rpc::error_codes::INVALID_PARAMS, err_msg);
@@ -130,7 +133,7 @@ where
     let response = match handler(lsp, params) {
         Ok(result) => Response::from_ok(raw_request.id, result),
         Err(err) => {
-            log::error!("Request failed [method: {}]: {:?}", R::METHOD, err);
+            tracing::error!("Request failed [method: {}]: {:?}", R::METHOD, err);
             Response::from_error(raw_request.id, error_codes::REQUEST_FAILED, err.to_string())
         }
     };
@@ -141,6 +144,7 @@ where
     Ok(())
 }
 
+#[tracing::instrument(skip_all, fields(method = R::METHOD))]
 pub(crate) fn handle_notification<R, F>(
     lsp: &mut Server,
     raw_notification: Notification,
@@ -153,7 +157,7 @@ where
     let params = match serde_json::from_value::<R::Params>(raw_notification.params) {
         Ok(p) => p,
         Err(e) => {
-            log::warn!(
+            tracing::warn!(
                 "Invalid notification parameters [method: {}]: {}",
                 R::METHOD,
                 e
@@ -163,7 +167,7 @@ where
     };
 
     if let Err(err) = handler(lsp, params) {
-        log::error!("Notification failed [method: {}]: {:?}", R::METHOD, err);
+        tracing::error!("Notification failed [method: {}]: {:?}", R::METHOD, err);
         return Err(err);
     }
 

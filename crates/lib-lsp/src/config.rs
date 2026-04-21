@@ -124,7 +124,7 @@ impl Config {
         match Self::from_file(&path) {
             Ok(config) => config,
             Err(_) => {
-                log::debug!(
+                tracing::debug!(
                     "Config file not found or invalid, using defaults: {:?}",
                     path.as_ref()
                 );

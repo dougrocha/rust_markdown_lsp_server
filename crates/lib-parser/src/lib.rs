@@ -21,12 +21,6 @@ pub struct ParsedMarkdown<'a> {
     pub body: Vec<Spanned<MarkdownNode<'a>>>,
 }
 
-#[derive(Debug, Clone, PartialEq)]
-pub struct HeaderRef<'a> {
-    /// TODO: Remove this eventually
-    pub level: usize,
-    pub slug: &'a str,
-}
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum MarkdownNode<'a> {
@@ -70,7 +64,6 @@ pub enum InlineMarkdownNode<'a> {
     Link(LinkType<'a>),
     Tag(&'a str),
     Footnote(&'a str),
-    Invalid,
 }
 
 pub fn markdown_parser<'a>() -> impl Parser<'a, &'a str, ParsedMarkdown<'a>, ParseError<'a>> {

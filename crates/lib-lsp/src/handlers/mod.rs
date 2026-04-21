@@ -4,6 +4,7 @@ pub mod diagnostics;
 pub mod did_change;
 pub mod did_close;
 pub mod did_open;
+pub mod document_symbol;
 pub mod goto_definition;
 pub mod hover;
 pub mod initialize;

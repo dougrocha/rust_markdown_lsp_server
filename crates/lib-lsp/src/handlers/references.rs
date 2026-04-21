@@ -103,7 +103,7 @@ impl<'a> ReferenceCollector<'a> {
             Ok(resolved_target) if resolved_target == *source_uri => Some(()),
             Ok(_) => None,
             Err(err) => {
-                log::error!("Target resolution failed: {:?}", err);
+                tracing::error!("Target resolution failed: {:?}", err);
                 None
             }
         }
@@ -129,7 +129,7 @@ impl<'a> ReferenceCollector<'a> {
                 let resolved_target = match resolve_target_uri(self.lsp, self.source_doc, target) {
                     Ok(target) => target,
                     Err(err) => {
-                        log::error!("Source link target resolution failed: {:?}", err);
+                        tracing::error!("Source link target resolution failed: {:?}", err);
                         return None;
                     }
                 };

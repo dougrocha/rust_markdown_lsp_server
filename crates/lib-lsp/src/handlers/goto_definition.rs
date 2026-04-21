@@ -70,7 +70,7 @@ fn find_definition<'a>(
     match reference {
         Some(reference) => Ok((target_doc, reference.range)),
         None => {
-            log::warn!(
+            tracing::warn!(
                 "Header '#{}' not found in document '{}'. Falling back to file start.",
                 target_content,
                 target

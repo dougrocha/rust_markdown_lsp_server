@@ -140,7 +140,7 @@ pub fn process_completion(
             handle_trigger_completion(lsp, document, position)
         }
         CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS => {
-            log::error!("Completions for incomplete trigger is not implemented yet");
+            tracing::error!("Completions for incomplete trigger is not implemented yet");
             None
         }
         _ => {
@@ -171,7 +171,7 @@ fn handle_invoked_completion(
     let trigger_pos = anchor_idx + 1;
     let trigger_lsp_pos = slice.byte_to_lsp_position(trigger_pos);
 
-    log::debug!(
+    tracing::debug!(
         "Invoked: {:?}",
         slice.get_slice(trigger_pos.saturating_sub(2)..trigger_pos.saturating_add(4))
     );
@@ -218,7 +218,7 @@ fn complete_document_links(
         ) {
             Ok(text) => text,
             Err(e) => {
-                log::warn!("Failed to generate link text: {}", e);
+                tracing::warn!("Failed to generate link text: {}", e);
                 continue;
             }
         };
@@ -269,7 +269,7 @@ fn complete_headers(
     ) {
         Ok(uri) => uri,
         Err(e) => {
-            log::warn!(
+            tracing::warn!(
                 "Header completion failed to resolve link '{}': {}",
                 ctx.file_path,
                 e
@@ -315,7 +315,7 @@ fn has_closing_chars(document: &Document, byte_pos: usize, link_type: LinkType) 
         .get_reference_at_position(slice.byte_to_lsp_position(byte_pos))
         .is_some()
     {
-        log::debug!("HERE TRUE");
+        tracing::debug!("HERE TRUE");
         return true;
     }
 

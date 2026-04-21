@@ -73,7 +73,7 @@ impl Server {
     /// Load configuration from a file path
     pub fn load_config<P: AsRef<std::path::Path>>(&mut self, config_path: P) {
         self.config = Config::from_file_or_default(config_path);
-        log::info!("Loaded configuration: {:?}", self.config);
+        tracing::info!("Loaded configuration: {:?}", self.config);
     }
 
     pub fn insert_root(&mut self, uri: Uri) {
@@ -95,19 +95,19 @@ impl Server {
         workspace_folders: Option<Vec<WorkspaceFolder>>,
     ) -> Result<()> {
         let Some(folders) = workspace_folders else {
-            log::info!("No workspace folders provided - running in single-file mode.");
+            tracing::info!("No workspace folders provided - running in single-file mode.");
             return Ok(());
         };
 
         for folder in folders {
             let root_uri = folder.uri;
 
-            log::info!("Adding workspace root: {:?}", root_uri);
+            tracing::info!("Adding workspace root: {:?}", root_uri);
             self.workspace_roots.push(root_uri.clone());
 
             // 2. Scan the files in this specific root
             let Some(root_path) = root_uri.to_file_path() else {
-                log::warn!("Skipping invalid workspace path: {:?}", root_uri);
+                tracing::warn!("Skipping invalid workspace path: {:?}", root_uri);
                 continue;
             };
 
@@ -124,7 +124,7 @@ impl Server {
                 let contents = match std::fs::read_to_string(entry_path) {
                     Ok(c) => c,
                     Err(e) => {
-                        log::debug!("Could not read file {:?}: {}", entry_path, e);
+                        tracing::debug!("Could not read file {:?}: {}", entry_path, e);
                         continue;
                     }
                 };

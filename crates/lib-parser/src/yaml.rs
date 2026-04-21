@@ -13,6 +13,16 @@ type KeyValue<'a> = (&'a str, Yaml<'a>);
 #[derive(Debug, Clone, PartialEq)]
 pub struct Frontmatter<'a>(pub Vec<KeyValue<'a>>);
 
+impl<'a> Frontmatter<'a> {
+    pub fn get(&self, key: &str) -> Option<&Yaml<'a>> {
+        self.0.iter().find(|(k, _)| *k == key).map(|(_, v)| v)
+    }
+
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut Yaml<'a>> {
+        self.0.iter_mut().find(|(k, _)| *k == key).map(|(_, v)| v)
+    }
+}
+
 fn unquoted_string<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
     any()
         .filter(|c: &char| !c.is_control() && *c != '\n' && *c != ':' && *c != '#')

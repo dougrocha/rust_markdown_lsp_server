@@ -10,7 +10,7 @@ macro_rules! dispatch_lsp_request {
                 }
             )*
             method => {
-                log::warn!("Unimplemented request method: {}", method);
+                tracing::warn!("Unimplemented request method: {}", method);
             }
         }
     };
@@ -28,7 +28,7 @@ macro_rules! dispatch_lsp_notification {
                 }
             )*
             method => {
-                log::warn!("Unimplemented notification method: {}", method);
+                tracing::warn!("Unimplemented notification method: {}", method);
             }
         }
     };

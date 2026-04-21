@@ -17,8 +17,15 @@ pub fn header_parser<'a>() -> impl Parser<'a, &'a str, MarkdownNode<'a>, ParseEr
         .map(|s: &'a str| s.trim_end().trim_end_matches('#').trim())
         .labelled("header text");
 
+    let required_space = any()
+        .filter(|c: &char| *c == ' ' || *c == '\t')
+        .repeated()
+        .at_least(1)
+        .ignored()
+        .labelled("space after #");
+
     hashes
-        .then_ignore(text::inline_whitespace())
+        .then_ignore(required_space)
         .then(line_text)
         .map(|(hashes, text_slice)| MarkdownNode::Header {
             level: hashes,
@@ -31,7 +38,7 @@ pub fn tag_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, Pars
     just('#')
         .ignore_then(
             any()
-                .filter(|c: &char| c.is_alphanumeric())
+                .filter(|c: &char| c.is_alphanumeric() || *c == '-' || *c == '_')
                 .repeated()
                 .at_least(1)
                 .to_slice(),
@@ -44,7 +51,7 @@ pub fn footnote_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>,
     just("[^")
         .ignore_then(
             any()
-                .filter(|c: &char| c.is_alphanumeric())
+                .filter(|c: &char| c.is_alphanumeric() || *c == '-' || *c == '_')
                 .repeated()
                 .at_least(1)
                 .to_slice(),
@@ -59,7 +66,7 @@ pub fn footnote_definition_parser<'a>() -> impl Parser<'a, &'a str, MarkdownNode
     let id = just("[^")
         .ignore_then(
             any()
-                .filter(|c: &char| c.is_alphanumeric())
+                .filter(|c: &char| c.is_alphanumeric() || *c == '-' || *c == '_')
                 .repeated()
                 .at_least(1)
                 .to_slice(),
@@ -85,16 +92,6 @@ pub fn wikilink_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>,
         .filter(|c: &char| *c != ']' && *c != '\n')
         .repeated()
         .to_slice()
-        .validate(|x: &str, e, emitter| {
-            if x.starts_with(" ") || x.ends_with(" ") {
-                emitter.emit(Rich::custom(
-                    e.span(),
-                    "WikiLink alias contains spaces before or after.",
-                ));
-            }
-
-            x
-        })
         .map(|alias: &'a str| alias.trim())
         .map(|alias| (!alias.is_empty()).then_some(alias));
 
@@ -143,16 +140,6 @@ pub fn link_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a>, Par
         .repeated()
         .at_least(1)
         .to_slice()
-        .validate(|x: &str, e, emitter| {
-            if x.starts_with(" ") || x.ends_with(" ") {
-                emitter.emit(Rich::custom(
-                    e.span(),
-                    "Link title contains spaces before or after",
-                ));
-            }
-
-            x
-        })
         .map(|title: &str| title.trim())
         .labelled("Link Title Parser");
 
@@ -216,8 +203,6 @@ pub fn plain_text_parser<'a>() -> impl Parser<'a, &'a str, InlineMarkdownNode<'a
     let stop_condition = choice((
         just("#"),
         just("["),
-        just("[^"),
-        just("[["),
         just("!["),
         just("\n\n"),
     ))
@@ -238,8 +223,6 @@ pub fn line_plain_text_parser<'a>()
     let stop_condition = choice((
         just("#"),
         just("["),
-        just("[^"),
-        just("[["),
         just("!["),
         just("\n"),
     ))

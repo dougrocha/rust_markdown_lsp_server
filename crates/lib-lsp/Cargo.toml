@@ -5,8 +5,8 @@ edition = "2024"
 
 [dependencies]
 lib-core = { workspace = true }
-log = { workspace = true }
 lsp-types = { workspace = true }
+tracing = { workspace = true }
 miette = { workspace = true }
 ropey = { workspace = true }
 serde = { workspace = true }
