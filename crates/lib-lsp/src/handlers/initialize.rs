@@ -1,12 +1,12 @@
-use tracing::info;
 use lsp_types::{
     CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions,
     DiagnosticOptions, DiagnosticRegistrationOptions, DiagnosticServerCapabilities,
     DocumentSymbolOptions, HoverProviderCapability, InitializeParams, InitializeResult, OneOf,
-    ServerCapabilities, ServerInfo, TextDocumentSyncCapability, TextDocumentSyncKind,
-    WorkspaceSymbolOptions,
+    RenameOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
+    TextDocumentSyncKind, WorkspaceSymbolOptions,
 };
 use miette::{IntoDiagnostic, Result};
+use tracing::info;
 
 use crate::messages::{Request, Response};
 
@@ -42,6 +42,10 @@ pub fn process_initialize(request: Request) -> Result<(Response, InitializeParam
             })),
             workspace_symbol_provider: Some(OneOf::Right(WorkspaceSymbolOptions {
                 resolve_provider: Some(false),
+                work_done_progress_options: Default::default(),
+            })),
+            rename_provider: Some(OneOf::Right(RenameOptions {
+                prepare_provider: Some(true),
                 work_done_progress_options: Default::default(),
             })),
             completion_provider: Some(CompletionOptions {

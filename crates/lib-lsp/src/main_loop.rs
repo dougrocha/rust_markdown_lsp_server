@@ -19,6 +19,7 @@ use crate::{
         hover::process_hover,
         initialize::process_initialize,
         references::process_references,
+        rename::{process_prepare_rename, process_rename},
         workspace_symbol::process_workspace_symbol,
     },
     messages::{Message, Notification, Request, Response},
@@ -55,6 +56,8 @@ pub fn run_lsp() -> Result<()> {
                         request::DocumentDiagnosticRequest => process_diagnostic,
                         request::DocumentSymbolRequest => process_document_symbol,
                         request::WorkspaceSymbolRequest => process_workspace_symbol,
+                        request::Rename => process_rename,
+                        request::PrepareRenameRequest => process_prepare_rename,
                     });
                 }
             },
