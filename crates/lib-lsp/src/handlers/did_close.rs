@@ -13,7 +13,10 @@ pub fn process_did_close(lsp: &mut Server, params: DidCloseTextDocumentParams) -
     };
 
     match std::fs::read_to_string(&path) {
-        Ok(contents) => lsp.documents.update_document(&uri, &contents)?,
+        Ok(contents) => {
+            lsp.documents.update_document(&uri, &contents)?;
+            lsp.documents.close_document(&uri);
+        }
         Err(_) => lsp.documents.remove_document(&uri),
     }
 
