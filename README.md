@@ -7,10 +7,10 @@ from both Marksman and zk-nvim, but I can't use them at the same time.
 
 Currently, this server supports:
 
-- **Wiki-links preview**  
+- **Wiki-links preview**
   Example:
   ```md
-  Example: [[example_link]]  
+  Example: [[example_link]]
   To a Header: [[example_link#With Header]]
   ```
 
@@ -24,10 +24,10 @@ Currently, this server supports:
 - [x] `textDocument/completion` - Autocomplete for `[[`, `](`, and `#` (headers)
 - [x] `textDocument/codeAction` - Extract header sections to new files
 - [x] `textDocument/publishDiagnostics` - Report parser errors (partial)
-- [ ] `textDocument/rename` - Rename files/headers and update all references
-- [ ] `textDocument/documentSymbol` - Document outline with headers and links
-- [ ] `textDocument/workspaceSymbol` - Search symbols across workspace
-- [ ] `textDocument/formatting` - Format markdown documents
+- [x] `textDocument/rename` - Rename files/headers and update all references
+- [x] `textDocument/documentSymbol` - Document outline with headers and links
+- [x] `textDocument/workspaceSymbol` - Search symbols across workspace
+- [-] `textDocument/formatting` - Format markdown documents
 - [ ] Proper document syncing (incremental sync instead of full sync)
 - [ ] Broken link validation (configured but not active)
 - [ ] Missing frontmatter validation (configured but not active)
