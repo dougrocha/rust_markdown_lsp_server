@@ -8,7 +8,5 @@ Nah JK
 
 # Test 2 Header file
 
-[test 1 header test](test#test-1)
-
-[test 1 header test](test#test-1)
+[test 1 header test](./test2.md)
 

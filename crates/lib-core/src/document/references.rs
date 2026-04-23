@@ -23,6 +23,43 @@ impl Reference {
 
         true
     }
+
+    pub fn to_file_text(&self) -> String {
+        match &self.kind {
+            ReferenceKind::Link {
+                target,
+                alt_text,
+                title: _,
+                header,
+            } => {
+                let mut path = target.clone();
+                if let Some(h) = header {
+                    path.push_str(&format!("#{}", h));
+                }
+
+                // TODO: Add title
+                format!("[{}]({})", alt_text, path)
+            }
+            ReferenceKind::WikiLink {
+                target,
+                alias,
+                header,
+            } => {
+                let mut path = target.clone();
+                if let Some(h) = header {
+                    path.push_str(&format!("#{}", h));
+                }
+
+                match alias {
+                    Some(a) => format!("[[{}|{}]]", path, a),
+                    None => format!("[[{}]]", path),
+                }
+            }
+            ReferenceKind::Header { level, content } => {
+                format!("{} {}", "#".repeat(*level), content)
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

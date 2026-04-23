@@ -208,7 +208,7 @@ fn complete_document_links(
 
     let source_root = lsp.get_workspace_root_for_uri(&document.uri);
 
-    for doc in lsp.documents.get_documents() {
+    for doc in lsp.documents.iter() {
         // Generate link text based on config
         let link_text = match helpers::generate_link_text(
             &lsp.config.links,

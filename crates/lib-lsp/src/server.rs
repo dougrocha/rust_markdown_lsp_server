@@ -1,6 +1,6 @@
 use lsp_types::{ClientCapabilities, Uri, WorkspaceFolder};
 use miette::Result;
-use std::collections::{HashMap, HashSet};
+use std::collections::HashMap;
 
 use lib_core::{
     document::{Document, references::Reference},
@@ -12,31 +12,14 @@ use crate::config::Config;
 #[derive(Default)]
 pub struct DocumentStore {
     documents: HashMap<Uri, Document>,
-    open_documents: HashSet<Uri>,
 }
 
 impl DocumentStore {
-    pub fn index_document(&mut self, uri: Uri, text: &str) -> Result<()> {
-        let document = Document::new(uri.clone(), text, 0)?;
-        self.documents.insert(uri, document);
-
-        Ok(())
-    }
-
     pub fn open_document(&mut self, uri: Uri, version: i32, text: &str) -> Result<()> {
         let document = Document::new(uri.clone(), text, version)?;
         self.documents.insert(uri.clone(), document);
-        self.open_documents.insert(uri);
 
         Ok(())
-    }
-
-    pub fn close_document(&mut self, uri: &Uri) {
-        self.open_documents.remove(uri);
-    }
-
-    pub fn is_open(&self, uri: &Uri) -> bool {
-        self.open_documents.contains(uri)
     }
 
     pub fn update_document(&mut self, uri: &Uri, text: &str) -> Result<()> {
@@ -48,7 +31,6 @@ impl DocumentStore {
     }
 
     pub fn remove_document(&mut self, uri: &Uri) {
-        self.open_documents.remove(uri);
         self.documents.remove(uri);
     }
 
@@ -60,12 +42,12 @@ impl DocumentStore {
         self.documents.get_mut(uri)
     }
 
-    pub fn get_documents(&self) -> impl Iterator<Item = &Document> {
+    pub fn iter(&self) -> impl Iterator<Item = &Document> {
         self.documents.values()
     }
 
     pub fn get_references(&self) -> impl Iterator<Item = &Reference> {
-        self.get_documents().flat_map(|doc| doc.references.iter())
+        self.iter().flat_map(|doc| doc.references.iter())
     }
 
     pub fn get_references_with_uri(&self) -> impl Iterator<Item = (&Uri, &Reference)> {
@@ -90,8 +72,9 @@ impl Server {
 
     /// Load configuration from a file path
     pub fn load_config<P: AsRef<std::path::Path>>(&mut self, config_path: P) {
+        tracing::info!("Loading configuration: {:?}", self.config);
+
         self.config = Config::from_file_or_default(config_path);
-        tracing::info!("Loaded configuration: {:?}", self.config);
     }
 
     pub fn insert_root(&mut self, uri: Uri) {
@@ -148,7 +131,7 @@ impl Server {
                 };
 
                 if let Some(uri) = Uri::from_file_path(entry_path) {
-                    self.documents.index_document(uri, &contents)?;
+                    self.documents.open_document(uri, 0, &contents)?;
                 }
             }
         }

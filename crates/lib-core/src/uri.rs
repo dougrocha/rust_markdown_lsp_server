@@ -64,6 +64,22 @@ pub trait UriExt: Sized + sealed::Sealed {
     ///
     /// Returns `None` if the file does not exist.
     fn from_file_path<A: AsRef<Path>>(path: A) -> Option<Self>;
+
+    /// Get the file-stem directly from the Uri
+    fn get_file_stem(&self) -> Option<String> {
+        self.to_file_path().and_then(|path| {
+            path.file_stem()
+                .map(|os_str| os_str.to_string_lossy().into_owned())
+        })
+    }
+
+    /// Get the file-name directly from the Uri
+    fn get_file_name(&self) -> Option<String> {
+        self.to_file_path().and_then(|path| {
+            path.file_name()
+                .map(|os_str| os_str.to_string_lossy().into_owned())
+        })
+    }
 }
 
 impl sealed::Sealed for lsp_types::Uri {}

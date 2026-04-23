@@ -20,7 +20,10 @@ use crate::{
         hover::process_hover,
         initialize::process_initialize,
         references::process_references,
-        rename::{process_prepare_rename, process_rename},
+        rename::{
+            did_rename::process_did_rename, process_prepare_rename, process_rename,
+            will_rename::process_will_rename_files,
+        },
         workspace_symbol::process_workspace_symbol,
     },
     messages::{Message, Notification, Request, Response},
@@ -29,6 +32,8 @@ use crate::{
 use crate::{dispatch_lsp_notification, rpc};
 
 pub fn run_lsp() -> Result<()> {
+    tracing::info!("LSP server starting...");
+
     let (stdin, stdout) = (io::stdin(), io::stdout());
     let (mut reader, mut writer) = (stdin.lock(), stdout.lock());
 
@@ -41,29 +46,34 @@ pub fn run_lsp() -> Result<()> {
 
     loop {
         match handle_message(&mut reader)? {
-            Message::Request(request) => match request.method.as_str() {
-                "shutdown" => {
-                    tracing::info!("Shutting down");
-                    break;
+            Message::Request(request) => {
+                tracing::trace!("{}", request.method);
+
+                match request.method.as_str() {
+                    "shutdown" => {
+                        tracing::info!("Shutting down");
+                        break;
+                    }
+                    _ => {
+                        dispatch_lsp_request!(&mut lsp, request, &mut writer, {
+                            request::HoverRequest => process_hover,
+                            request::GotoDefinition => process_goto_definition,
+                            request::CodeActionRequest => process_code_action,
+                            request::Completion => process_completion,
+                            request::ResolveCompletionItem => process_completion_resolve,
+                            request::References => process_references,
+                            request::DocumentDiagnosticRequest => process_diagnostic,
+                            request::DocumentSymbolRequest => process_document_symbol,
+                            request::WorkspaceSymbolRequest => process_workspace_symbol,
+                            request::Rename => process_rename,
+                            request::PrepareRenameRequest => process_prepare_rename,
+                            request::WillRenameFiles => process_will_rename_files,
+                        });
+                    }
                 }
-                _ => {
-                    dispatch_lsp_request!(&mut lsp, request, &mut writer, {
-                        request::HoverRequest => process_hover,
-                        request::GotoDefinition => process_goto_definition,
-                        request::CodeActionRequest => process_code_action,
-                        request::Completion => process_completion,
-                        request::ResolveCompletionItem => process_completion_resolve,
-                        request::References => process_references,
-                        request::DocumentDiagnosticRequest => process_diagnostic,
-                        request::DocumentSymbolRequest => process_document_symbol,
-                        request::WorkspaceSymbolRequest => process_workspace_symbol,
-                        request::Rename => process_rename,
-                        request::PrepareRenameRequest => process_prepare_rename,
-                    });
-                }
-            },
+            }
             Message::Notification(notification) => {
-                tracing::trace!("textDocument/{}", notification.method);
+                tracing::trace!("{}", notification.method);
 
                 match notification.method.as_str() {
                     "exit" => {
@@ -77,6 +87,7 @@ pub fn run_lsp() -> Result<()> {
                             notification::DidOpenTextDocument => process_did_open,
                             notification::DidChangeTextDocument => process_did_change,
                             notification::DidCloseTextDocument => process_did_close,
+                            notification::DidRenameFiles => process_did_rename,
                         });
                     }
                 }

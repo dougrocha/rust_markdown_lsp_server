@@ -1,23 +1,16 @@
-use lib_core::uri::UriExt;
 use lsp_types::DidCloseTextDocumentParams;
 use miette::Result;
+use tracing::trace;
 
 use crate::server::Server;
 
 pub fn process_did_close(lsp: &mut Server, params: DidCloseTextDocumentParams) -> Result<()> {
     let uri = params.text_document.uri;
 
-    let Some(path) = uri.to_file_path() else {
-        lsp.documents.remove_document(&uri);
-        return Ok(());
-    };
+    trace!("Closing file {}", uri.as_str());
 
-    match std::fs::read_to_string(&path) {
-        Ok(contents) => {
-            lsp.documents.update_document(&uri, &contents)?;
-            lsp.documents.close_document(&uri);
-        }
-        Err(_) => lsp.documents.remove_document(&uri),
+    if let Some(doc) = lsp.documents.get_document_mut(&uri) {
+        doc.close();
     }
 
     Ok(())

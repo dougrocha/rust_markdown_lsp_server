@@ -1,3 +1,5 @@
+pub mod references;
+
 use lsp_types::{Position, Range, Uri};
 use miette::{Context, IntoDiagnostic, Result, miette};
 use ropey::RopeSlice;

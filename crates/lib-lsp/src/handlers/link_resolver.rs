@@ -7,9 +7,9 @@ use lib_core::{
     uri::UriExt,
 };
 
-use crate::{config::LinkConfig, server::DocumentStore};
+use crate::{Server, config::LinkConfig, server::DocumentStore};
 
-pub fn resolve_target_uri(lsp: &crate::Server, document: &Document, target: &str) -> Result<Uri> {
+pub fn resolve_target_uri(lsp: &Server, document: &Document, target: &str) -> Result<Uri> {
     let active_root = lsp.get_workspace_root_for_uri(&document.uri);
 
     resolve_link(
@@ -74,7 +74,11 @@ fn resolve_as_path(
         Uri::from_file_path(target_path)
             .ok_or_else(|| miette!("Failed to create URI from absolute path: {}", target))
     } else {
-        combine_and_normalize(&source_doc.uri, target).context("Failed to resolve a relative path.")
+        combine_and_normalize(&source_doc.uri, target).context(format!(
+            "Failed to resolve relative path '{}' from '{}'",
+            target,
+            source_doc.uri.as_str()
+        ))
     }
 }
 
@@ -91,7 +95,7 @@ fn resolve_by_filename(
     let target_stem = target.strip_suffix(".md").unwrap_or(target);
 
     let normalized_target = normalize_for_matching(target_stem);
-    documents.get_documents().find_map(|doc| {
+    documents.iter().find_map(|doc| {
         let doc_filename = extract_filename_stem(&doc.uri)?;
         let normalized_doc = normalize_for_matching(&doc_filename);
 

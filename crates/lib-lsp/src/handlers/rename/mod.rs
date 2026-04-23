@@ -1,3 +1,6 @@
+pub mod did_rename;
+pub mod will_rename;
+
 use std::collections::HashMap;
 
 use lib_core::{document::references::ReferenceKind, get_document, uri::UriExt};
@@ -110,15 +113,16 @@ fn rename_header(
         if ref_uri != current_uri {
             continue;
         }
-        if let ReferenceKind::Header { level: l, content } = ref_kind {
-            if *l == level && content == old_content {
-                let new_header_text = format!("{} {}", "#".repeat(level), new_name);
-                changes.entry(ref_uri.clone()).or_default().push(TextEdit {
-                    range: *ref_range,
-                    new_text: new_header_text,
-                });
-                break;
-            }
+        if let ReferenceKind::Header { level: l, content } = ref_kind
+            && *l == level
+            && content == old_content
+        {
+            let new_header_text = format!("{} {}", "#".repeat(level), new_name);
+            changes.entry(ref_uri.clone()).or_default().push(TextEdit {
+                range: *ref_range,
+                new_text: new_header_text,
+            });
+            break;
         }
     }
 

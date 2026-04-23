@@ -8,7 +8,7 @@ ariadne = { workspace = true }
 chumsky = { workspace = true }
 
 [dev-dependencies]
-divan = "0.1.17"
+divan = "0.1.21"
 
 [[bench]]
 name = "parser"

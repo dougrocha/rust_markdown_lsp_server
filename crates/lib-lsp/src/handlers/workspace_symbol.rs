@@ -14,7 +14,7 @@ pub fn process_workspace_symbol(
 
     let symbols = lsp
         .documents
-        .get_documents()
+        .iter()
         .flat_map(|doc| {
             let container_name = extract_filename_stem(&doc.uri);
             let uri = doc.uri.clone();

@@ -18,6 +18,7 @@ pub struct Document {
     pub content: Rope,
     pub references: Vec<Reference>,
     pub diagnostics: Vec<Diagnostic>,
+    is_open: bool,
 }
 
 impl Document {
@@ -29,10 +30,19 @@ impl Document {
             content: Rope::from_str(content),
             references: Vec::new(),
             diagnostics: Vec::new(),
+            is_open: false,
         };
         s.parse_and_analyze()?;
 
         Ok(s)
+    }
+
+    pub fn open(&mut self) {
+        self.is_open = true;
+    }
+
+    pub fn close(&mut self) {
+        self.is_open = false;
     }
 
     pub fn update(&mut self, content: &str, version: i32) -> Result<()> {
