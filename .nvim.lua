@@ -6,7 +6,9 @@ vim.api.nvim_create_user_command("TestRename", function()
 	local bufname = vim.api.nvim_buf_get_name(current_buf)
 	local current_uri = vim.uri_from_fname(bufname)
 
-	local new_uri = current_uri:gsub("%.md$", "_RENAME_TEST.md")
+	local fname = vim.fn.fnamemodify(bufname, ":t")
+	local dir = vim.fn.fnamemodify(bufname, ":h")
+	local new_uri = vim.uri_from_fname(dir .. "/test/" .. fname)
 
 	local params = {
 		files = {

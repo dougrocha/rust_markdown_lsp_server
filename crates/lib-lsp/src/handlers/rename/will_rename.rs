@@ -2,10 +2,11 @@ use std::{collections::HashMap, str::FromStr};
 
 use lib_core::{
     document::references::{Reference, ReferenceKind},
+    get_document,
     uri::UriExt,
 };
 use lsp_types::{FileRename, RenameFilesParams, TextEdit, Uri, WorkspaceEdit};
-use miette::{IntoDiagnostic, Result};
+use miette::{Context, IntoDiagnostic, Result};
 use path_clean::PathClean;
 use tracing::debug;
 
@@ -52,6 +53,46 @@ pub fn process_will_rename_files(
             let text_edit = TextEdit::new(reference.range, new_ref.to_file_text());
 
             changes.entry(doc_uri.clone()).or_default().push(text_edit);
+        }
+
+        // renames the references inside the file that was moved,
+        // not working right now
+        debug!("Start Phase of renaming");
+
+        let doc = get_document!(lsp, &new_uri);
+        let references = &doc.references;
+
+        for reference in references
+            .iter()
+            .filter(|reference| reference.kind.is_link())
+        {
+            debug!(?reference);
+
+            let Some(target_file_path) = old_uri.to_file_path().and_then(|path| {
+                path.parent()
+                    .map(|p| p.to_path_buf().join(reference.kind.get_target().unwrap()))
+            }) else {
+                continue;
+            };
+
+            let mut new_path_str = pathdiff::diff_paths(
+                target_file_path,
+                new_uri.to_file_path().unwrap().parent().unwrap(),
+            )
+            .unwrap()
+            .to_string_lossy()
+            .to_string();
+
+            debug!(?new_path_str);
+
+            if !new_path_str.starts_with('.') {
+                new_path_str = format!("./{}", new_path_str);
+            }
+
+            let new_ref = create_reference_with_new_uri(reference, new_path_str);
+            let text_edit = TextEdit::new(reference.range, new_ref.to_file_text());
+
+            changes.entry(doc.uri.clone()).or_default().push(text_edit);
         }
     }
 
@@ -111,4 +152,88 @@ fn find_references_to_uri<'a>(
                 .to_file_path()
                 .is_some_and(|uri_path| resolved_path == uri_path)
         })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::Server;
+    use lsp_types::{FileRename, RenameFilesParams};
+    use std::str::FromStr;
+
+    fn uri(path: &str) -> Uri {
+        Uri::from_str(&format!("file://{}", path)).unwrap()
+    }
+
+    fn init_tracing() {
+        let _ = tracing_subscriber::fmt()
+            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
+            .with_test_writer()
+            .try_init();
+    }
+
+    fn open(server: &mut Server, path: &str, content: &str) {
+        server
+            .documents
+            .open_document(uri(path), 1, content)
+            .unwrap();
+    }
+
+    #[test]
+    fn rename_updates_link_in_referencing_doc() {
+        init_tracing();
+        let mut server = Server::new();
+        open(&mut server, "/workspace/notes.md", "[link](./target.md)");
+        open(&mut server, "/workspace/renamed.md", "# Target");
+
+        let params = RenameFilesParams {
+            files: vec![FileRename {
+                old_uri: uri("/workspace/target.md").to_string(),
+                new_uri: uri("/workspace/renamed.md").to_string(),
+            }],
+        };
+
+        let edit = process_will_rename_files(&mut server, params)
+            .unwrap()
+            .unwrap();
+
+        #[allow(clippy::mutable_key_type)]
+        let changes = edit.changes.unwrap();
+        let edits = changes.get(&uri("/workspace/notes.md")).unwrap();
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].new_text, "[link](./renamed.md)");
+    }
+
+    #[test]
+    fn move_to_subfolder_updates_link_in_referencing_doc() {
+        init_tracing();
+        let mut server = Server::new();
+        open(&mut server, "/workspace/notes.md", "[link](./target.md)");
+        open(
+            &mut server,
+            "/workspace/docs/target.md",
+            "[notes](./notes.md)",
+        );
+
+        let params = RenameFilesParams {
+            files: vec![FileRename {
+                old_uri: uri("/workspace/target.md").to_string(),
+                new_uri: uri("/workspace/docs/target.md").to_string(),
+            }],
+        };
+
+        let edit = process_will_rename_files(&mut server, params)
+            .unwrap()
+            .unwrap();
+
+        #[allow(clippy::mutable_key_type)]
+        let changes = edit.changes.unwrap();
+        let edits = changes.get(&uri("/workspace/notes.md")).unwrap();
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].new_text, "[link](./docs/target.md)");
+
+        let edits = changes.get(&uri("/workspace/docs/target.md")).unwrap();
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].new_text, "[notes](../notes.md)");
+    }
 }
