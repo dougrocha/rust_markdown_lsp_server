@@ -5,9 +5,10 @@ use lib_core::{
     document::Document,
     path::{combine_and_normalize, extract_filename_stem},
     uri::UriExt,
+    vault::Vault,
 };
 
-use crate::{ServerState, config::LinkConfig, server_state::DocumentStore};
+use crate::{ServerState, config::LinkConfig};
 
 pub fn resolve_target_uri(lsp: &ServerState, document: &Document, target: &str) -> Result<Uri> {
     let active_root = lsp.get_workspace_root_for_uri(&document.uri);
@@ -26,7 +27,7 @@ pub fn resolve_link(
     target: &str,
     source_doc: &Document,
     config: &LinkConfig,
-    documents: &DocumentStore,
+    documents: &Vault,
     workspace_root: Option<&Uri>,
 ) -> Result<Uri> {
     if is_path_syntax(target) {
@@ -87,11 +88,7 @@ fn resolve_as_path(
 ///
 /// Note: Always strips .md extension from target for comparison,
 /// so both [[note]] and [[note.md]] will match note.md
-fn resolve_by_filename(
-    target: &str,
-    documents: &DocumentStore,
-    _config: &LinkConfig,
-) -> Option<Uri> {
+fn resolve_by_filename(target: &str, documents: &Vault, _config: &LinkConfig) -> Option<Uri> {
     let target_stem = target.strip_suffix(".md").unwrap_or(target);
 
     let normalized_target = normalize_for_matching(target_stem);

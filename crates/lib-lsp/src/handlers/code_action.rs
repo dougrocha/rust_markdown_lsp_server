@@ -1,6 +1,4 @@
-use lib_core::{
-    document::references::ReferenceKind, get_document, path::get_parent_path, uri::UriExt,
-};
+use lib_core::{document::references::ReferenceKind, path::get_parent_path, uri::UriExt};
 
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
@@ -11,6 +9,7 @@ use lsp_types::{
 use miette::{Context, Result};
 
 use crate::{
+    get_document,
     handlers::link_resolver::resolve_target_uri,
     helpers::{extract_header_section, generate_link_text, get_content},
     server_state::ServerState,

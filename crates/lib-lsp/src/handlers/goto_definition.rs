@@ -1,13 +1,10 @@
-use lib_core::{
-    document::{Document, references::ReferenceKind},
-    get_document,
-};
+use lib_core::document::{Document, references::ReferenceKind};
 
 use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range};
 use miette::{Context, Result};
 
 use crate::{
-    handlers::link_resolver::resolve_target_uri, helpers::normalize_header_content,
+    get_document, handlers::link_resolver::resolve_target_uri, helpers::normalize_header_content,
     server_state::ServerState,
 };
 

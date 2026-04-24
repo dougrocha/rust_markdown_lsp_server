@@ -1,12 +1,14 @@
-use lib_core::document::{
-    Document,
-    references::{Reference as DocReference, ReferenceKind},
+use lib_core::{
+    document::{
+        Document,
+        references::{Reference as DocReference, ReferenceKind},
+    },
+    vault::Vault,
 };
 use lsp_types::{Location, Uri};
 
 use crate::{
-    DocumentStore, ServerState, handlers::link_resolver::resolve_target_uri,
-    helpers::normalize_header_content,
+    ServerState, handlers::link_resolver::resolve_target_uri, helpers::normalize_header_content,
 };
 
 /// Helper for collecting references to a specific item in the document
@@ -32,7 +34,7 @@ impl<'a> ReferenceCollector<'a> {
         }
     }
 
-    pub(crate) fn collect_from(&self, documents: &DocumentStore) -> Vec<Location> {
+    pub(crate) fn collect_from(&self, documents: &Vault) -> Vec<Location> {
         documents
             .get_references_with_uri()
             .filter(|(uri, ref_doc)| !self.is_source_reference(uri, ref_doc))

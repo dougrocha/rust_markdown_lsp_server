@@ -12,8 +12,7 @@ use lib_core::{
     uri::UriExt,
 };
 use lsp_types::{RenameFilesParams, TextEdit, Uri, WorkspaceEdit};
-use miette::{IntoDiagnostic, Result, miette};
-use path_clean::PathClean;
+use miette::{IntoDiagnostic, Result};
 
 use crate::{
     ServerState,

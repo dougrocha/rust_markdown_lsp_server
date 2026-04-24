@@ -1,10 +1,10 @@
-use lib_core::{document::references::ReferenceKind, get_document};
+use lib_core::document::references::ReferenceKind;
 use lsp_types::{
     DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, Position, Range, SymbolKind,
 };
 use miette::{Context, Result};
 
-use crate::server_state::ServerState;
+use crate::{get_document, server_state::ServerState};
 
 pub fn process_document_symbol(
     lsp: &mut ServerState,

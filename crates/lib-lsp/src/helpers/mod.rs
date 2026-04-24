@@ -10,7 +10,6 @@ use lib_core::{
         Document,
         references::{Reference, ReferenceKind},
     },
-    get_document,
     path::{extract_filename_stem, find_relative_path},
     text_buffer_conversions::TextBufferConversions,
     uri::UriExt,
@@ -18,6 +17,7 @@ use lib_core::{
 
 use crate::{
     config::{self, LinkGenerationStyle},
+    get_document,
     handlers::link_resolver::resolve_target_uri,
     server_state::ServerState,
 };

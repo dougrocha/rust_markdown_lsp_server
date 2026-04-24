@@ -11,4 +11,5 @@ pub mod initialize;
 pub mod link_resolver;
 pub mod references;
 pub mod rename;
+pub mod will_create;
 pub mod workspace_symbol;

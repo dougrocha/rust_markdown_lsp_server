@@ -33,3 +33,23 @@ macro_rules! dispatch_lsp_notification {
         }
     };
 }
+
+#[macro_export]
+macro_rules! get_document {
+    ($state:expr, $uri:expr) => {
+        $state
+            .documents
+            .get_document($uri)
+            .with_context(|| format!("Document '{}' not found", $uri.as_str()))?
+    };
+}
+
+#[macro_export]
+macro_rules! get_document_mut {
+    ($state:expr, $uri:expr) => {
+        $state
+            .documents
+            .get_document_mut($uri)
+            .with_context(|| format!("Document '{}' not found", $uri.as_str()))?
+    };
+}

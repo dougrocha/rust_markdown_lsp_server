@@ -24,6 +24,7 @@ use crate::{
             did_rename::process_did_rename, process_prepare_rename, process_rename,
             will_rename::process_will_rename_files,
         },
+        will_create::{process_did_create, process_will_create_files},
         workspace_symbol::process_workspace_symbol,
     },
     messages::{Message, Notification, Request, Response},
@@ -65,9 +66,10 @@ pub fn run_lsp() -> Result<()> {
                             request::DocumentDiagnosticRequest => process_diagnostic,
                             request::DocumentSymbolRequest => process_document_symbol,
                             request::WorkspaceSymbolRequest => process_workspace_symbol,
-                            request::Rename => process_rename,
                             request::PrepareRenameRequest => process_prepare_rename,
+                            request::Rename => process_rename,
                             request::WillRenameFiles => process_will_rename_files,
+                            request::WillCreateFiles => process_will_create_files,
                         });
                     }
                 }
@@ -88,6 +90,7 @@ pub fn run_lsp() -> Result<()> {
                             notification::DidChangeTextDocument => process_did_change,
                             notification::DidCloseTextDocument => process_did_close,
                             notification::DidRenameFiles => process_did_rename,
+                            notification::DidCreateFiles => process_did_create,
                         });
                     }
                 }

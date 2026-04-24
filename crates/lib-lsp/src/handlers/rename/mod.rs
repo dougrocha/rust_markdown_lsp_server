@@ -3,7 +3,7 @@ pub mod will_rename;
 
 use std::collections::HashMap;
 
-use lib_core::{document::references::ReferenceKind, get_document, uri::UriExt};
+use lib_core::{document::references::ReferenceKind, uri::UriExt};
 use lsp_types::{
     DocumentChangeOperation, DocumentChanges, OneOf, OptionalVersionedTextDocumentIdentifier,
     Position, PrepareRenameResponse, Range, RenameFile, RenameParams, ResourceOp, TextDocumentEdit,
@@ -12,6 +12,7 @@ use lsp_types::{
 use miette::{Context, Result, miette};
 
 use crate::{
+    get_document,
     handlers::link_resolver::resolve_target_uri,
     helpers::{generate_link_text, normalize_header_content},
     server_state::ServerState,
@@ -29,7 +30,6 @@ pub fn process_prepare_rename(
     let response = match document.get_reference_at_position(position) {
         Some(r) => match &r.kind {
             ReferenceKind::Header { level, content } => {
-                // Offer just the content text as the rename target, excluding the `## ` prefix
                 let content_col = r.range.start.character + *level as u32 + 1;
                 let content_range =
                     Range::new(Position::new(r.range.start.line, content_col), r.range.end);

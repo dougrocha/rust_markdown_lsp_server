@@ -1,6 +1,5 @@
 use lib_core::{
     document::{Document, references::ReferenceKind},
-    get_document,
     text_buffer_conversions::TextBufferConversions,
 };
 
@@ -11,6 +10,7 @@ use lsp_types::{
 use miette::{Context, Result, miette};
 
 use crate::{
+    get_document,
     handlers::link_resolver,
     helpers::{self, normalize_header_content},
     server_state::ServerState,

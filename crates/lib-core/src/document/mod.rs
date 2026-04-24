@@ -132,7 +132,7 @@ impl Document {
                                     };
                                     self.references.push(reference);
                                 }
-                                LinkType::ImageLink { text, uri } => {
+                                LinkType::ImageLink { .. } => {
                                     tracing::debug!("Not currently supporting images")
                                 }
                             }
@@ -176,7 +176,7 @@ impl Document {
                                     };
                                     self.references.push(reference);
                                 }
-                                LinkType::ImageLink { text, uri } => {
+                                LinkType::ImageLink { .. } => {
                                     tracing::debug!("Not currently supporting images")
                                 }
                             }

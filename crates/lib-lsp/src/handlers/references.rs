@@ -1,8 +1,7 @@
-use lib_core::get_document;
 use lsp_types::{Location, ReferenceParams};
 use miette::{Context, Result};
 
-use crate::{helpers::references::ReferenceCollector, server_state::ServerState};
+use crate::{get_document, helpers::references::ReferenceCollector, server_state::ServerState};
 
 pub fn process_references(
     lsp: &mut ServerState,
