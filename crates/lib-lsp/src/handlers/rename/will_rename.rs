@@ -1,19 +1,21 @@
-use std::{collections::HashMap, str::FromStr};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use lib_core::{
-    document::references::{Reference, ReferenceKind},
-    get_document,
+    document::{
+        Document,
+        references::{Reference, ReferenceKind},
+    },
     uri::UriExt,
 };
 use lsp_types::{FileRename, RenameFilesParams, TextEdit, Uri, WorkspaceEdit};
-use miette::{Context, IntoDiagnostic, Result};
+use miette::{IntoDiagnostic, Result, miette};
 use path_clean::PathClean;
 use tracing::debug;
 
-use crate::Server;
+use crate::ServerState;
 
 pub fn process_will_rename_files(
-    lsp: &mut Server,
+    lsp: &mut ServerState,
     params: RenameFilesParams,
 ) -> Result<Option<WorkspaceEdit>> {
     let files = params.files;
@@ -30,69 +32,52 @@ pub fn process_will_rename_files(
         let old_uri = Uri::from_str(old_uri).into_diagnostic()?;
         let new_uri = Uri::from_str(new_uri).into_diagnostic()?;
 
-        // let references = ReferenceCollector::collect_file_references(lsp, &old_uri);
-        let references = find_references_to_uri(lsp, &old_uri);
-        for (doc_uri, reference) in references {
-            debug!(?doc_uri, ?reference);
+        // update references connected to the changed file
+        for (doc, reference) in find_references_to_uri(lsp, &old_uri) {
+            let new_path = calculate_inbound_path(&new_uri, &doc.uri);
+            let new_ref = create_reference_with_new_uri(reference, new_path);
 
-            let mut new_path_str = pathdiff::diff_paths(
-                new_uri.to_file_path().unwrap(),
-                doc_uri.to_file_path().unwrap().parent().unwrap(),
-            )
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
-
-            debug!(?new_path_str);
-
-            if !new_path_str.starts_with('.') {
-                new_path_str = format!("./{}", new_path_str);
-            }
-
-            let new_ref = create_reference_with_new_uri(reference, new_path_str);
-            let text_edit = TextEdit::new(reference.range, new_ref.to_file_text());
-
-            changes.entry(doc_uri.clone()).or_default().push(text_edit);
+            changes
+                .entry(doc.uri.clone())
+                .or_default()
+                .push(TextEdit::new(reference.range, new_ref.to_file_text()));
         }
 
-        // renames the references inside the file that was moved,
-        // not working right now
-        debug!("Start Phase of renaming");
+        // update references inside the renamed file itself
+        if let Some(doc) = lsp.documents.get_document(&old_uri) {
+            let old_dir = old_uri
+                .to_file_path()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                .ok_or(miette!("Could not find parent"))?;
+            let new_dir = new_uri
+                .to_file_path()
+                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
+                .ok_or(miette!("Could not find parent"))?;
 
-        let doc = get_document!(lsp, &new_uri);
-        let references = &doc.references;
+            let edits: Vec<TextEdit> = doc
+                .references
+                .iter()
+                .filter(|r| r.kind.is_link())
+                .filter_map(|reference| {
+                    let target_str = reference.kind.get_target()?;
+                    let target_abs = old_dir.join(target_str).clean();
 
-        for reference in references
-            .iter()
-            .filter(|reference| reference.kind.is_link())
-        {
-            debug!(?reference);
+                    let mut new_path_str = pathdiff::diff_paths(&target_abs, &new_dir)?
+                        .to_string_lossy()
+                        .to_string();
 
-            let Some(target_file_path) = old_uri.to_file_path().and_then(|path| {
-                path.parent()
-                    .map(|p| p.to_path_buf().join(reference.kind.get_target().unwrap()))
-            }) else {
-                continue;
-            };
+                    if !new_path_str.starts_with('.') {
+                        new_path_str = format!("./{}", new_path_str);
+                    }
 
-            let mut new_path_str = pathdiff::diff_paths(
-                target_file_path,
-                new_uri.to_file_path().unwrap().parent().unwrap(),
-            )
-            .unwrap()
-            .to_string_lossy()
-            .to_string();
+                    let new_ref = create_reference_with_new_uri(reference, new_path_str);
+                    Some(TextEdit::new(reference.range, new_ref.to_file_text()))
+                })
+                .collect();
 
-            debug!(?new_path_str);
-
-            if !new_path_str.starts_with('.') {
-                new_path_str = format!("./{}", new_path_str);
+            if !edits.is_empty() {
+                changes.entry(new_uri.clone()).or_default().extend(edits);
             }
-
-            let new_ref = create_reference_with_new_uri(reference, new_path_str);
-            let text_edit = TextEdit::new(reference.range, new_ref.to_file_text());
-
-            changes.entry(doc.uri.clone()).or_default().push(text_edit);
         }
     }
 
@@ -102,6 +87,22 @@ pub fn process_will_rename_files(
         changes: Some(changes),
         ..Default::default()
     }))
+}
+
+fn calculate_inbound_path(new_uri: &Uri, doc_uri: &Uri) -> String {
+    let mut new_path_str = pathdiff::diff_paths(
+        new_uri.to_file_path().unwrap(),
+        doc_uri.to_file_path().unwrap().parent().unwrap(),
+    )
+    .unwrap()
+    .to_string_lossy()
+    .to_string();
+
+    if !new_path_str.starts_with('.') {
+        new_path_str = format!("./{}", new_path_str);
+    }
+
+    new_path_str
 }
 
 fn create_reference_with_new_uri(reference: &Reference, new_target: String) -> Reference {
@@ -129,35 +130,38 @@ fn create_reference_with_new_uri(reference: &Reference, new_target: String) -> R
 }
 
 fn find_references_to_uri<'a>(
-    lsp: &'a Server,
+    lsp: &'a ServerState,
     match_uri: &Uri,
-) -> impl Iterator<Item = (&'a Uri, &'a Reference)> {
-    lsp.documents
-        .get_references_with_uri()
-        .filter(move |(base_uri, reference)| {
-            let Some(reference_target) = reference.kind.get_target() else {
-                return false;
-            };
+) -> impl Iterator<Item = (&'a Document, &'a Reference)> {
+    let match_path: Option<PathBuf> = match_uri.to_file_path().map(|c| c.into_owned());
 
-            let Some(base_file_path) = base_uri
-                .to_file_path()
-                .and_then(|path| path.parent().map(|p| p.to_path_buf()))
-            else {
-                return false;
-            };
+    lsp.documents.iter().flat_map(move |doc| {
+        doc.references.iter().flat_map({
+            let match_path = match_path.clone();
+            move |reference| {
+                let target_str = reference.kind.get_target()?;
 
-            let resolved_path = base_file_path.join(reference_target).clean();
+                let doc_path = doc.uri.to_file_path()?;
+                let base_path = doc_path.parent()?;
 
-            match_uri
-                .to_file_path()
-                .is_some_and(|uri_path| resolved_path == uri_path)
+                let resolved_path = base_path.join(target_str).clean();
+
+                if let Some(ref m_path) = match_path
+                    && m_path == &resolved_path
+                {
+                    return Some((doc, reference));
+                }
+
+                None
+            }
         })
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::server::Server;
+    use crate::server_state::ServerState;
     use lsp_types::{FileRename, RenameFilesParams};
     use std::str::FromStr;
 
@@ -172,19 +176,19 @@ mod tests {
             .try_init();
     }
 
-    fn open(server: &mut Server, path: &str, content: &str) {
+    fn open(server: &mut ServerState, path: &str, content: &str) {
         server
             .documents
-            .open_document(uri(path), 1, content)
+            .create_document(uri(path), 1, content)
             .unwrap();
     }
 
     #[test]
     fn rename_updates_link_in_referencing_doc() {
         init_tracing();
-        let mut server = Server::new();
+        let mut server = ServerState::new();
         open(&mut server, "/workspace/notes.md", "[link](./target.md)");
-        open(&mut server, "/workspace/renamed.md", "# Target");
+        open(&mut server, "/workspace/target.md", "# Target");
 
         let params = RenameFilesParams {
             files: vec![FileRename {
@@ -207,13 +211,9 @@ mod tests {
     #[test]
     fn move_to_subfolder_updates_link_in_referencing_doc() {
         init_tracing();
-        let mut server = Server::new();
+        let mut server = ServerState::new();
         open(&mut server, "/workspace/notes.md", "[link](./target.md)");
-        open(
-            &mut server,
-            "/workspace/docs/target.md",
-            "[notes](./notes.md)",
-        );
+        open(&mut server, "/workspace/target.md", "[notes](./notes.md)");
 
         let params = RenameFilesParams {
             files: vec![FileRename {

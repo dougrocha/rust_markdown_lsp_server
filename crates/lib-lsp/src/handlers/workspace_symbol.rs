@@ -4,10 +4,10 @@ use lsp_types::{
 };
 use miette::Result;
 
-use crate::server::Server;
+use crate::server_state::ServerState;
 
 pub fn process_workspace_symbol(
-    lsp: &mut Server,
+    lsp: &mut ServerState,
     params: WorkspaceSymbolParams,
 ) -> Result<Option<WorkspaceSymbolResponse>> {
     let query = params.query.to_lowercase();

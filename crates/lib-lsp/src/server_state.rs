@@ -15,19 +15,34 @@ pub struct DocumentStore {
 }
 
 impl DocumentStore {
-    pub fn open_document(&mut self, uri: Uri, version: i32, text: &str) -> Result<()> {
+    pub fn create_document(&mut self, uri: Uri, version: i32, text: &str) -> Result<()> {
         let document = Document::new(uri.clone(), text, version)?;
         self.documents.insert(uri.clone(), document);
 
         Ok(())
     }
 
-    pub fn update_document(&mut self, uri: &Uri, text: &str) -> Result<()> {
+    pub fn update_document(&mut self, uri: &Uri, version: i32, text: &str) -> Result<()> {
         if let Some(document) = self.get_document_mut(uri) {
-            document.update(text, 0)?;
+            document.update(text, version)?;
         }
 
         Ok(())
+    }
+
+    pub fn open_document(&mut self, uri: &Uri, version: i32, content: &str) -> Result<()> {
+        if let Some(doc) = self.get_document_mut(uri) {
+            doc.is_open = true;
+            doc.update(content, version)?;
+        }
+
+        Ok(())
+    }
+
+    pub fn close_document(&mut self, uri: &Uri) {
+        if let Some(doc) = self.get_document_mut(uri) {
+            doc.is_open = false;
+        }
     }
 
     pub fn remove_document(&mut self, uri: &Uri) {
@@ -58,14 +73,14 @@ impl DocumentStore {
 }
 
 #[derive(Default)]
-pub struct Server {
+pub struct ServerState {
     pub documents: DocumentStore,
     pub config: Config,
     workspace_roots: Vec<Uri>,
     client_capabilities: Option<ClientCapabilities>,
 }
 
-impl Server {
+impl ServerState {
     pub fn new() -> Self {
         Self::default()
     }
@@ -131,7 +146,7 @@ impl Server {
                 };
 
                 if let Some(uri) = Uri::from_file_path(entry_path) {
-                    self.documents.open_document(uri, 0, &contents)?;
+                    self.documents.create_document(uri, 0, &contents)?;
                 }
             }
         }

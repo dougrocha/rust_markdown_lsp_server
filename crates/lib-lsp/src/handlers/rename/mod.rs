@@ -14,11 +14,11 @@ use miette::{Context, Result, miette};
 use crate::{
     handlers::link_resolver::resolve_target_uri,
     helpers::{generate_link_text, normalize_header_content},
-    server::Server,
+    server_state::ServerState,
 };
 
 pub fn process_prepare_rename(
-    lsp: &mut Server,
+    lsp: &mut ServerState,
     params: TextDocumentPositionParams,
 ) -> Result<Option<PrepareRenameResponse>> {
     let uri = params.text_document.uri;
@@ -58,7 +58,10 @@ pub fn process_prepare_rename(
     Ok(Some(response))
 }
 
-pub fn process_rename(lsp: &mut Server, params: RenameParams) -> Result<Option<WorkspaceEdit>> {
+pub fn process_rename(
+    lsp: &mut ServerState,
+    params: RenameParams,
+) -> Result<Option<WorkspaceEdit>> {
     let uri = params.text_document_position.text_document.uri;
     let position = params.text_document_position.position;
     let new_name = params.new_name;
@@ -92,7 +95,7 @@ pub fn process_rename(lsp: &mut Server, params: RenameParams) -> Result<Option<W
 }
 
 fn rename_header(
-    lsp: &Server,
+    lsp: &ServerState,
     current_uri: &Uri,
     level: usize,
     old_content: &str,
@@ -177,7 +180,7 @@ fn rename_header(
     }))
 }
 
-fn rename_file(lsp: &Server, old_uri: &Uri, new_name: &str) -> Result<Option<WorkspaceEdit>> {
+fn rename_file(lsp: &ServerState, old_uri: &Uri, new_name: &str) -> Result<Option<WorkspaceEdit>> {
     // Build the new URI by swapping the filename stem
     let old_path = old_uri
         .to_file_path()

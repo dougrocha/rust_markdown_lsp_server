@@ -4,10 +4,10 @@ use lsp_types::{
 };
 use miette::{Context, Result};
 
-use crate::server::Server;
+use crate::server_state::ServerState;
 
 pub fn process_document_symbol(
-    lsp: &mut Server,
+    lsp: &mut ServerState,
     params: DocumentSymbolParams,
 ) -> Result<Option<DocumentSymbolResponse>> {
     let uri = params.text_document.uri;

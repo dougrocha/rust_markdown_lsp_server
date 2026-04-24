@@ -7,9 +7,9 @@ use lib_core::{
     uri::UriExt,
 };
 
-use crate::{Server, config::LinkConfig, server::DocumentStore};
+use crate::{ServerState, config::LinkConfig, server_state::DocumentStore};
 
-pub fn resolve_target_uri(lsp: &Server, document: &Document, target: &str) -> Result<Uri> {
+pub fn resolve_target_uri(lsp: &ServerState, document: &Document, target: &str) -> Result<Uri> {
     let active_root = lsp.get_workspace_root_for_uri(&document.uri);
 
     resolve_link(

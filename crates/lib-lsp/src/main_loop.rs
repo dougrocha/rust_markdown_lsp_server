@@ -7,7 +7,7 @@ use miette::{Result, miette};
 use std::io::{self, BufRead, Write};
 
 use crate::{
-    Server, dispatch_lsp_request,
+    ServerState, dispatch_lsp_request,
     handlers::{
         code_action::process_code_action,
         completion::{completion_resolve::process_completion_resolve, process_completion},
@@ -37,7 +37,7 @@ pub fn run_lsp() -> Result<()> {
     let (stdin, stdout) = (io::stdin(), io::stdout());
     let (mut reader, mut writer) = (stdin.lock(), stdout.lock());
 
-    let mut lsp = Server::default();
+    let mut lsp = ServerState::default();
     lsp.load_config("rust-markdown-lsp.toml");
 
     let init_params = handle_initialize(&mut reader, &mut writer)?;
@@ -123,7 +123,7 @@ where
 /// Called by the `dispatch_lsp_request!` macro.
 #[tracing::instrument(skip_all, fields(method = R::METHOD))]
 pub(crate) fn handle_request<R, W, F>(
-    lsp: &mut Server,
+    lsp: &mut ServerState,
     raw_request: Request,
     writer: &mut W,
     handler: F,
@@ -131,7 +131,7 @@ pub(crate) fn handle_request<R, W, F>(
 where
     R: LspRequest,
     W: Write,
-    F: FnOnce(&mut Server, R::Params) -> Result<R::Result>,
+    F: FnOnce(&mut ServerState, R::Params) -> Result<R::Result>,
 {
     let params = match serde_json::from_value::<R::Params>(raw_request.params) {
         Ok(p) => p,
@@ -164,13 +164,13 @@ where
 
 #[tracing::instrument(skip_all, fields(method = R::METHOD))]
 pub(crate) fn handle_notification<R, F>(
-    lsp: &mut Server,
+    lsp: &mut ServerState,
     raw_notification: Notification,
     handler: F,
 ) -> Result<()>
 where
     R: LspNotification,
-    F: FnOnce(&mut Server, R::Params) -> Result<()>,
+    F: FnOnce(&mut ServerState, R::Params) -> Result<()>,
 {
     let params = match serde_json::from_value::<R::Params>(raw_notification.params) {
         Ok(p) => p,

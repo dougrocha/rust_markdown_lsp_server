@@ -13,7 +13,7 @@ use miette::{Context, Result, miette};
 use crate::{
     handlers::link_resolver,
     helpers::{self, normalize_header_content},
-    server::Server,
+    server_state::ServerState,
 };
 
 pub mod completion_resolve;
@@ -121,7 +121,7 @@ impl LinkType {
 }
 
 pub fn process_completion(
-    lsp: &mut Server,
+    lsp: &mut ServerState,
     params: CompletionParams,
 ) -> Result<Option<CompletionResponse>> {
     let uri = params.text_document_position.text_document.uri;
@@ -155,7 +155,7 @@ pub fn process_completion(
 }
 
 fn handle_invoked_completion(
-    lsp: &Server,
+    lsp: &ServerState,
     document: &Document,
     position: lsp_types::Position,
 ) -> Option<Vec<CompletionItem>> {
@@ -180,7 +180,7 @@ fn handle_invoked_completion(
 }
 
 fn handle_trigger_completion(
-    lsp: &Server,
+    lsp: &ServerState,
     document: &Document,
     position: lsp_types::Position,
 ) -> Option<Vec<CompletionItem>> {
@@ -200,7 +200,7 @@ fn handle_trigger_completion(
 }
 
 fn complete_document_links(
-    lsp: &Server,
+    lsp: &ServerState,
     document: &Document,
     ctx: LinkContext,
 ) -> Option<Vec<CompletionItem>> {
@@ -252,7 +252,7 @@ fn complete_document_links(
 }
 
 fn complete_headers(
-    lsp: &Server,
+    lsp: &ServerState,
     document: &Document,
     ctx: HeaderContext,
 ) -> Option<Vec<CompletionItem>> {

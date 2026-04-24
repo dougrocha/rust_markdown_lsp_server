@@ -13,11 +13,11 @@ use miette::{Context, Result};
 use crate::{
     handlers::link_resolver::resolve_target_uri,
     helpers::{extract_header_section, generate_link_text, get_content},
-    server::Server,
+    server_state::ServerState,
 };
 
 pub fn process_code_action(
-    lsp: &mut Server,
+    lsp: &mut ServerState,
     params: CodeActionParams,
 ) -> Result<Option<CodeActionResponse>> {
     let uri = params.text_document.uri;
@@ -34,7 +34,7 @@ pub fn process_code_action(
 }
 
 fn handle_non_range(
-    lsp: &mut Server,
+    lsp: &mut ServerState,
     uri: &Uri,
     range: &Range,
 ) -> Result<Option<CodeActionResponse>> {
@@ -81,17 +81,14 @@ fn handle_non_range(
                             version: None,
                         },
                         edits: vec![OneOf::Left(TextEdit::new(
-                            Range::new(
-                                Position::new(0, 0),
-                                Position::new(slice.lines().count() as u32, 0),
-                            ),
+                            Range::new(Position::new(0, 0), Position::new(0, 0)),
                             normalize_header_levels(&header_content.to_string(), delta),
                         ))],
                     }),
                     DocumentChangeOperation::Edit(TextDocumentEdit {
                         text_document: OptionalVersionedTextDocumentIdentifier {
                             uri: uri.clone(),
-                            version: None,
+                            version: Some(document.version),
                         },
                         edits: vec![OneOf::Left(TextEdit::new(range, {
                             let link_text = generate_link_text(
@@ -128,17 +125,17 @@ fn handle_non_range(
         | ReferenceKind::WikiLink { target, header, .. } => {
             let target_uri = resolve_target_uri(lsp, document, target)?;
 
+            // TODO: normalize later
             let target_doc_content = get_content(lsp, document, target, header.as_deref())?;
 
             let document_changes = DocumentChanges::Operations(vec![
                 DocumentChangeOperation::Edit(TextDocumentEdit {
                     text_document: OptionalVersionedTextDocumentIdentifier {
                         uri: uri.clone(),
-                        version: None,
+                        version: Some(document.version),
                     },
                     edits: vec![OneOf::Left(TextEdit::new(
                         reference.range,
-                        // TODO: normalize later
                         target_doc_content,
                     ))],
                 }),
@@ -147,7 +144,7 @@ fn handle_non_range(
                     options: Some(DeleteFileOptions {
                         ignore_if_not_exists: Some(false),
                         recursive: None,
-                        annotation_id: Some("Inserting ".to_string()),
+                        annotation_id: None,
                     }),
                 })),
             ]);

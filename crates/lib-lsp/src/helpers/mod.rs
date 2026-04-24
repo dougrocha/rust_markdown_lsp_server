@@ -18,7 +18,7 @@ use lib_core::{
 use crate::{
     config::{self, LinkGenerationStyle},
     handlers::link_resolver::resolve_target_uri,
-    server::Server,
+    server_state::ServerState,
 };
 
 /// Normalizes header content to match the format used in completions
@@ -41,7 +41,7 @@ pub fn normalize_header_content(content: &str) -> String {
 
 /// Retrieves the content from a linked document based on the provided link data.
 pub fn get_content(
-    lsp: &Server,
+    lsp: &ServerState,
     document: &Document,
     target: &str,
     header: Option<&str>,
@@ -287,11 +287,11 @@ mod tests {
 
     #[test]
     fn test_resolve_target_uri() {
-        use crate::server::Server;
+        use crate::server_state::ServerState;
         use lsp_types::Uri;
         use std::str::FromStr;
 
-        let mut server = Server::new();
+        let mut server = ServerState::new();
         let workspace_root = Uri::from_str("file:///workspace").unwrap();
         server.insert_root(workspace_root);
 

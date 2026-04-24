@@ -5,13 +5,13 @@ use lib_core::document::{
 use lsp_types::{Location, Uri};
 
 use crate::{
-    DocumentStore, Server, handlers::link_resolver::resolve_target_uri,
+    DocumentStore, ServerState, handlers::link_resolver::resolve_target_uri,
     helpers::normalize_header_content,
 };
 
 /// Helper for collecting references to a specific item in the document
 pub(crate) struct ReferenceCollector<'a> {
-    pub(crate) lsp: &'a Server,
+    pub(crate) lsp: &'a ServerState,
     pub(crate) source_doc: &'a Document,
     pub(crate) source_uri: &'a Uri,
     pub(crate) source_ref: &'a DocReference,
@@ -22,7 +22,7 @@ impl<'a> ReferenceCollector<'a> {
         src_doc: &'a Document,
         uri: &'a lsp_types::Uri,
         reference: &'a DocReference,
-        lsp: &'a Server,
+        lsp: &'a ServerState,
     ) -> Self {
         Self {
             source_doc: src_doc,
@@ -42,7 +42,7 @@ impl<'a> ReferenceCollector<'a> {
 
     /// Collect all references that point to the a file, reaardless of header
     pub(crate) fn collect_file_reference_locations(
-        lsp: &'a Server,
+        lsp: &'a ServerState,
         source_uri: &'a Uri,
     ) -> Vec<Location> {
         Self::collect_file_references(lsp, source_uri)
@@ -52,7 +52,7 @@ impl<'a> ReferenceCollector<'a> {
 
     /// Collect all references that point to the a file, reaardless of header
     pub(crate) fn collect_file_references(
-        lsp: &'a Server,
+        lsp: &'a ServerState,
         source_uri: &'a Uri,
     ) -> impl Iterator<Item = (&'a Uri, &'a DocReference)> + 'a {
         lsp.documents
@@ -74,7 +74,7 @@ impl<'a> ReferenceCollector<'a> {
 
     /// Resolve a target URI and check if it matches the source URI
     pub(crate) fn resolve_and_check_target(
-        lsp: &Server,
+        lsp: &ServerState,
         source_doc: &Document,
         target: &str,
         source_uri: &Uri,

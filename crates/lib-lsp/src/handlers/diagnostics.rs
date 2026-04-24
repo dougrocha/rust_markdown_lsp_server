@@ -6,10 +6,10 @@ use miette::{Context, Result};
 
 use lib_core::get_document;
 
-use crate::server::Server;
+use crate::server_state::ServerState;
 
 pub fn process_diagnostic(
-    lsp: &mut Server,
+    lsp: &mut ServerState,
     params: DocumentDiagnosticParams,
 ) -> Result<DocumentDiagnosticReportResult> {
     let uri = params.text_document.uri;

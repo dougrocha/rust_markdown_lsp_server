@@ -2,10 +2,10 @@ use lib_core::get_document;
 use lsp_types::{Location, ReferenceParams};
 use miette::{Context, Result};
 
-use crate::{helpers::references::ReferenceCollector, server::Server};
+use crate::{helpers::references::ReferenceCollector, server_state::ServerState};
 
 pub fn process_references(
-    lsp: &mut Server,
+    lsp: &mut ServerState,
     params: ReferenceParams,
 ) -> Result<Option<Vec<Location>>> {
     let uri = params.text_document_position.text_document.uri;
