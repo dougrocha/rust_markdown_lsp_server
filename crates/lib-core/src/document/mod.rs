@@ -1,19 +1,20 @@
-use std::{fmt::Debug, ops::Range};
+use std::{collections::HashMap, fmt::Debug, ops::Range};
 
-use lib_parser::{
-    InlineMarkdownNode, LinkType, MarkdownNode, Parser, Spanned, markdown_parser, yaml::Yaml,
-};
+use lib_parser::{InlineMarkdownNode, LinkType, MarkdownNode, Parser, Spanned, markdown_parser};
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Uri};
 use miette::Result;
 use references::{Reference, ReferenceKind};
 use ropey::Rope;
 
+use crate::document::metadata::FrontmatterValue;
+
+pub mod metadata;
 pub mod references;
 
 #[derive(Debug, Clone)]
 pub struct Document {
     pub uri: Uri,
-    pub id: Option<String>,
+    pub frontmatter: HashMap<String, FrontmatterValue>,
     pub version: i32,
     pub content: Rope,
     pub references: Vec<Reference>,
@@ -25,12 +26,12 @@ impl Document {
     pub fn new(uri: Uri, content: &str, version: i32) -> Result<Self> {
         let mut s = Self {
             uri,
-            id: None,
             version,
             content: Rope::from_str(content),
             references: Vec::new(),
             diagnostics: Vec::new(),
             is_open: false,
+            frontmatter: HashMap::new(),
         };
         s.parse_and_analyze()?;
 
@@ -78,10 +79,9 @@ impl Document {
 
         let frontmatter = parsed_markdown.frontmatter;
         if let Some(frontmatter) = frontmatter {
-            let id = frontmatter.get("id");
-
-            if let Some(Yaml::String(id)) = id {
-                self.id = Some(id.to_string());
+            for (key, val) in frontmatter.0 {
+                self.frontmatter
+                    .insert(key.to_string(), FrontmatterValue::from(val));
             }
         }
 
