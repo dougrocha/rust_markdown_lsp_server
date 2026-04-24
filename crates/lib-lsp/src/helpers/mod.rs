@@ -1,3 +1,4 @@
+pub mod path;
 pub mod references;
 
 use lsp_types::{Position, Range, Uri};

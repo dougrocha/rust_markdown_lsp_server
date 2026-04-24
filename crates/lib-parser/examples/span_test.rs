@@ -87,6 +87,7 @@ Another paragraph with #tag and [^1] footnote.
                                     println!("          Actual: '{}'", inline_text);
                                     println!("          Match: {}", inline_text.contains(uri));
                                 }
+                                LinkType::ImageLink { text, uri } => todo!(),
                             },
                             InlineMarkdownNode::Tag(tag) => {
                                 println!(

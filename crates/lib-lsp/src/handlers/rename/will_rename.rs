@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::PathBuf, str::FromStr};
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    str::FromStr,
+};
 
 use lib_core::{
     document::{
@@ -7,12 +11,14 @@ use lib_core::{
     },
     uri::UriExt,
 };
-use lsp_types::{FileRename, RenameFilesParams, TextEdit, Uri, WorkspaceEdit};
+use lsp_types::{RenameFilesParams, TextEdit, Uri, WorkspaceEdit};
 use miette::{IntoDiagnostic, Result, miette};
 use path_clean::PathClean;
-use tracing::debug;
 
-use crate::ServerState;
+use crate::{
+    ServerState,
+    helpers::path::{relative_path, resolve_reference_target},
+};
 
 pub fn process_will_rename_files(
     lsp: &mut ServerState,
@@ -23,19 +29,17 @@ pub fn process_will_rename_files(
     #[allow(clippy::mutable_key_type)]
     let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
 
-    debug!("Starting files");
-
     for file in &files {
-        let FileRename { old_uri, new_uri } = file;
-        debug!(?old_uri, ?new_uri);
+        let old_uri = Uri::from_str(&file.old_uri).into_diagnostic()?;
+        let new_uri = Uri::from_str(&file.new_uri).into_diagnostic()?;
 
-        let old_uri = Uri::from_str(old_uri).into_diagnostic()?;
-        let new_uri = Uri::from_str(new_uri).into_diagnostic()?;
+        let old_path = Path::new(&file.old_uri);
+        let new_path = Path::new(&file.new_uri);
 
         // update references connected to the changed file
         for (doc, reference) in find_references_to_uri(lsp, &old_uri) {
-            let new_path = calculate_inbound_path(&new_uri, &doc.uri);
-            let new_ref = create_reference_with_new_uri(reference, new_path);
+            let new_rel = relative_path(old_path, new_path)?;
+            let new_ref = create_reference_with_new_uri(reference, new_rel);
 
             changes
                 .entry(doc.uri.clone())
@@ -45,64 +49,26 @@ pub fn process_will_rename_files(
 
         // update references inside the renamed file itself
         if let Some(doc) = lsp.documents.get_document(&old_uri) {
-            let old_dir = old_uri
-                .to_file_path()
-                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-                .ok_or(miette!("Could not find parent"))?;
-            let new_dir = new_uri
-                .to_file_path()
-                .and_then(|p| p.parent().map(|d| d.to_path_buf()))
-                .ok_or(miette!("Could not find parent"))?;
-
-            let edits: Vec<TextEdit> = doc
+            for edit in doc
                 .references
                 .iter()
                 .filter(|r| r.kind.is_link())
                 .filter_map(|reference| {
-                    let target_str = reference.kind.get_target()?;
-                    let target_abs = old_dir.join(target_str).clean();
-
-                    let mut new_path_str = pathdiff::diff_paths(&target_abs, &new_dir)?
-                        .to_string_lossy()
-                        .to_string();
-
-                    if !new_path_str.starts_with('.') {
-                        new_path_str = format!("./{}", new_path_str);
-                    }
-
-                    let new_ref = create_reference_with_new_uri(reference, new_path_str);
+                    let resolved = resolve_reference_target(old_path, reference).ok()?;
+                    let new_rel = relative_path(new_path, resolved).ok()?;
+                    let new_ref = create_reference_with_new_uri(reference, new_rel);
                     Some(TextEdit::new(reference.range, new_ref.to_file_text()))
                 })
-                .collect();
-
-            if !edits.is_empty() {
-                changes.entry(new_uri.clone()).or_default().extend(edits);
+            {
+                changes.entry(new_uri.clone()).or_default().push(edit);
             }
         }
     }
-
-    debug!(?changes);
 
     Ok(Some(WorkspaceEdit {
         changes: Some(changes),
         ..Default::default()
     }))
-}
-
-fn calculate_inbound_path(new_uri: &Uri, doc_uri: &Uri) -> String {
-    let mut new_path_str = pathdiff::diff_paths(
-        new_uri.to_file_path().unwrap(),
-        doc_uri.to_file_path().unwrap().parent().unwrap(),
-    )
-    .unwrap()
-    .to_string_lossy()
-    .to_string();
-
-    if !new_path_str.starts_with('.') {
-        new_path_str = format!("./{}", new_path_str);
-    }
-
-    new_path_str
 }
 
 fn create_reference_with_new_uri(reference: &Reference, new_target: String) -> Reference {
@@ -129,6 +95,7 @@ fn create_reference_with_new_uri(reference: &Reference, new_target: String) -> R
     }
 }
 
+// Find all references that match a uri
 fn find_references_to_uri<'a>(
     lsp: &'a ServerState,
     match_uri: &Uri,
@@ -136,25 +103,25 @@ fn find_references_to_uri<'a>(
     let match_path: Option<PathBuf> = match_uri.to_file_path().map(|c| c.into_owned());
 
     lsp.documents.iter().flat_map(move |doc| {
-        doc.references.iter().flat_map({
-            let match_path = match_path.clone();
-            move |reference| {
-                let target_str = reference.kind.get_target()?;
+        doc.references
+            .iter()
+            .filter(|r| r.kind.is_link())
+            .filter_map({
+                let match_path = match_path.clone();
 
-                let doc_path = doc.uri.to_file_path()?;
-                let base_path = doc_path.parent()?;
+                move |reference| {
+                    let doc_path = doc.uri.to_file_path()?;
+                    let resolved_path = resolve_reference_target(doc_path, reference).ok()?;
 
-                let resolved_path = base_path.join(target_str).clean();
+                    if let Some(ref m_path) = match_path
+                        && m_path == &resolved_path
+                    {
+                        return Some((doc, reference));
+                    }
 
-                if let Some(ref m_path) = match_path
-                    && m_path == &resolved_path
-                {
-                    return Some((doc, reference));
+                    None
                 }
-
-                None
-            }
-        })
+            })
     })
 }
 
