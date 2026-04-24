@@ -92,7 +92,7 @@ impl UriExt for lsp_types::Uri {
         };
 
         if cfg!(windows) {
-            let authority = self.authority().expect("url has no authority component");
+            let authority = self.authority()?;
             let host = authority.host().as_str();
             if host.is_empty() {
                 // very high chance this is a `file:///` uri
