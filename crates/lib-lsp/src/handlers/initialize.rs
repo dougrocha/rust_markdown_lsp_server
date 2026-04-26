@@ -90,7 +90,7 @@ pub fn process_initialize(request: Request) -> Result<(Response, InitializeParam
             version: Some("0.0.1.test".to_string()),
         }),
     };
-    let result = serde_json::to_value(initialize_result).unwrap();
+    let result = serde_json::to_value(initialize_result).into_diagnostic()?;
 
     tracing::trace!("InitializeResult: {result:?}");
 

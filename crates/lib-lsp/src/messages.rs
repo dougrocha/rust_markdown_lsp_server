@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize, de::DeserializeOwned};
-use serde_json::Value;
+use serde_json::{Error, Value};
 
 pub const RPC_VERSION: &str = "2.0";
 
@@ -26,16 +26,18 @@ pub struct Request<P = Value> {
 
 impl Request {
     #[allow(dead_code)]
-    pub fn new<P>(id: usize, method: &str, params: P) -> Self
+    pub fn new<P>(id: usize, method: &str, params: P) -> Result<Self, Error>
     where
         P: Serialize,
     {
-        Self {
+        let request = Self {
             rpc: RPC_VERSION.to_string(),
             id,
             method: method.to_string(),
-            params: serde_json::to_value(params).unwrap(),
-        }
+            params: serde_json::to_value(params)?,
+        };
+
+        Ok(request)
     }
 }
 

@@ -126,79 +126,36 @@ fn find_references_to_uri<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use crate::server_state::ServerState;
-    use lsp_types::{FileRename, RenameFilesParams};
-    use std::str::FromStr;
-
-    fn uri(path: &str) -> Uri {
-        Uri::from_str(&format!("file://{}", path)).unwrap()
-    }
-
-    fn init_tracing() {
-        let _ = tracing_subscriber::fmt()
-            .with_env_filter(tracing_subscriber::EnvFilter::from_default_env())
-            .with_test_writer()
-            .try_init();
-    }
-
-    fn open(server: &mut ServerState, path: &str, content: &str) {
-        server
-            .documents
-            .create_document(uri(path), 1, content)
-            .unwrap();
-    }
+    use crate::test_utils::TestWorkspace;
 
     #[test]
     fn rename_updates_link_in_referencing_doc() {
-        init_tracing();
-        let mut server = ServerState::new();
-        open(&mut server, "/workspace/notes.md", "[link](./target.md)");
-        open(&mut server, "/workspace/target.md", "# Target");
+        let mut ws = TestWorkspace::new();
 
-        let params = RenameFilesParams {
-            files: vec![FileRename {
-                old_uri: uri("/workspace/target.md").to_string(),
-                new_uri: uri("/workspace/renamed.md").to_string(),
-            }],
-        };
+        ws.add_file("/workspace/notes.md", 1, "[link](./target.md)")
+            .add_file("/workspace/target.md", 1, "# Target");
 
-        let edit = process_will_rename_files(&mut server, params)
-            .unwrap()
-            .unwrap();
+        let changes = ws.rename("target.md", "renamed.md");
 
-        #[allow(clippy::mutable_key_type)]
-        let changes = edit.changes.unwrap();
-        let edits = changes.get(&uri("/workspace/notes.md")).unwrap();
+        let edits = changes.get("/workspace/notes.md").unwrap();
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].new_text, "[link](./renamed.md)");
     }
 
     #[test]
     fn move_to_subfolder_updates_link_in_referencing_doc() {
-        init_tracing();
-        let mut server = ServerState::new();
-        open(&mut server, "/workspace/notes.md", "[link](./target.md)");
-        open(&mut server, "/workspace/target.md", "[notes](./notes.md)");
+        let mut ws = TestWorkspace::new();
 
-        let params = RenameFilesParams {
-            files: vec![FileRename {
-                old_uri: uri("/workspace/target.md").to_string(),
-                new_uri: uri("/workspace/docs/target.md").to_string(),
-            }],
-        };
+        ws.add_file("/workspace/notes.md", 1, "[link](./target.md)")
+            .add_file("/workspace/target.md", 1, "[notes](./notes.md)");
 
-        let edit = process_will_rename_files(&mut server, params)
-            .unwrap()
-            .unwrap();
+        let changes = ws.rename("target.md", "docs/target.md");
 
-        #[allow(clippy::mutable_key_type)]
-        let changes = edit.changes.unwrap();
-        let edits = changes.get(&uri("/workspace/notes.md")).unwrap();
+        let edits = changes.get("/workspace/notes.md").unwrap();
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].new_text, "[link](./docs/target.md)");
 
-        let edits = changes.get(&uri("/workspace/docs/target.md")).unwrap();
+        let edits = changes.get("/workspace/docs/target.md").unwrap();
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].new_text, "[notes](../notes.md)");
     }
