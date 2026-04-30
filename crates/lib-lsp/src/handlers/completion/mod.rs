@@ -1,19 +1,18 @@
 use lib_core::{
     document::{Document, references::ReferenceKind},
+    path::slug::header_slug,
     text_buffer_conversions::TextBufferConversions,
 };
 
-use lsp_types::{
+use gen_lsp_types::{
     CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionParams,
-    CompletionResponse, CompletionTriggerKind, Documentation,
+    CompletionResponse, CompletionTriggerKind, Documentation, Position, Uri,
 };
 use miette::{Context, Result, miette};
 
 use crate::{
-    get_document,
-    handlers::link_resolver,
-    helpers::{self, header_slug},
-    server_state::ServerState,
+    get_document, handlers::link_resolver, helpers::generate_link_text, server_state::ServerState,
+    uri::UriExt,
 };
 
 pub mod completion_resolve;
@@ -124,8 +123,8 @@ pub fn process_completion(
     lsp: &mut ServerState,
     params: CompletionParams,
 ) -> Result<Option<CompletionResponse>> {
-    let uri = params.text_document_position.text_document.uri;
-    let position = params.text_document_position.position;
+    let uri = params.text_document_position_params.text_document.uri;
+    let position = params.text_document_position_params.position;
 
     let document = get_document!(lsp, &uri);
 
@@ -135,19 +134,13 @@ pub fn process_completion(
 
     // TODO: Make all outputs for paths and headers be normalized without spaces and symbols
     let completions = match context.trigger_kind {
-        CompletionTriggerKind::INVOKED => handle_invoked_completion(lsp, document, position),
-        CompletionTriggerKind::TRIGGER_CHARACTER => {
+        CompletionTriggerKind::Invoked => handle_invoked_completion(lsp, document, position),
+        CompletionTriggerKind::TriggerCharacter => {
             handle_trigger_completion(lsp, document, position)
         }
-        CompletionTriggerKind::TRIGGER_FOR_INCOMPLETE_COMPLETIONS => {
+        CompletionTriggerKind::TriggerForIncompleteCompletions => {
             tracing::error!("Completions for incomplete trigger is not implemented yet");
             None
-        }
-        _ => {
-            return Err(miette!(
-                "Unexpected completion trigger kind {:?}",
-                context.trigger_kind
-            ));
         }
     };
 
@@ -157,7 +150,7 @@ pub fn process_completion(
 fn handle_invoked_completion(
     lsp: &ServerState,
     document: &Document,
-    position: lsp_types::Position,
+    position: Position,
 ) -> Option<Vec<CompletionItem>> {
     let slice = document.content.slice(..);
     let byte_pos = slice.position_to_byte_offset(position);
@@ -182,7 +175,7 @@ fn handle_invoked_completion(
 fn handle_trigger_completion(
     lsp: &ServerState,
     document: &Document,
-    position: lsp_types::Position,
+    position: Position,
 ) -> Option<Vec<CompletionItem>> {
     let slice = document.content.slice(..);
     let byte_pos = slice.position_to_byte_offset(position);
@@ -206,22 +199,24 @@ fn complete_document_links(
 ) -> Option<Vec<CompletionItem>> {
     let mut completions: Vec<CompletionItem> = vec![];
 
-    let source_root = lsp.get_workspace_root_for_uri(&document.uri);
+    let source_root = lsp.get_workspace_root_for_path(&document.path);
 
     for doc in lsp.documents.iter() {
-        // Generate link text based on config
-        let link_text = match helpers::generate_link_text(
-            &lsp.config.links,
-            &document.uri,
-            &doc.uri,
-            source_root,
-        ) {
-            Ok(text) => text,
-            Err(e) => {
-                tracing::warn!("Failed to generate link text: {}", e);
-                continue;
-            }
+        let Some(source_uri) = Uri::from_file_path(&document.path) else {
+            continue;
         };
+        let Some(doc_uri) = Uri::from_file_path(&doc.path) else {
+            continue;
+        };
+        // Generate link text based on config
+        let link_text =
+            match generate_link_text(&lsp.config.links, &source_uri, &doc_uri, source_root) {
+                Ok(text) => text,
+                Err(e) => {
+                    tracing::warn!("Failed to generate link text: {}", e);
+                    continue;
+                }
+            };
 
         let encoded_text = ctx.link_type.encode_text(&link_text);
 
@@ -231,7 +226,7 @@ fn complete_document_links(
 
         completions.push(CompletionItem {
             label: link_text.clone(),
-            kind: Some(CompletionItemKind::FILE),
+            kind: Some(CompletionItemKind::File),
             detail: Some("Document".to_owned()),
             documentation: Some(Documentation::String(format!(
                 "Preview of {}:\n\n```markdown\n{}\n```",
@@ -258,7 +253,7 @@ fn complete_headers(
 ) -> Option<Vec<CompletionItem>> {
     let mut completions: Vec<CompletionItem> = vec![];
 
-    let source_root = lsp.get_workspace_root_for_uri(&document.uri);
+    let source_root = lsp.get_workspace_root_for_path(&document.path);
 
     let file_uri = match link_resolver::resolve_link(
         ctx.file_path,
@@ -278,7 +273,8 @@ fn complete_headers(
         }
     };
 
-    let ref_doc = lsp.documents.get_document(&file_uri)?;
+    let file_path = file_uri.to_file_path()?;
+    let ref_doc = lsp.documents.get_document(&file_path)?;
     for doc_ref in &ref_doc.references {
         if let ReferenceKind::Header { level, content } = &doc_ref.kind {
             let header_id = header_slug(content);
@@ -295,7 +291,7 @@ fn complete_headers(
                     detail: None,
                     description: Some(format!("H{level}")),
                 }),
-                kind: Some(CompletionItemKind::REFERENCE),
+                kind: Some(CompletionItemKind::Reference),
                 documentation: Some(Documentation::String(format!(
                     "# {content}\n\nHeading level {level}\n\nLink: `{header_id}`"
                 ))),

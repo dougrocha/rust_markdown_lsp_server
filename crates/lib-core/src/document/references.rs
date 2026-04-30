@@ -1,9 +1,9 @@
-use lsp_types::{Position, Range as LspRange};
+use gen_lsp_types::{Position, Range};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct Reference {
     pub kind: ReferenceKind,
-    pub range: LspRange,
+    pub range: Range,
 }
 
 impl Reference {

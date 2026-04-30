@@ -1,10 +1,10 @@
-use lib_core::document::references::ReferenceKind;
-use lsp_types::{
+use gen_lsp_types::{
     DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, Position, Range, SymbolKind,
 };
+use lib_core::document::references::ReferenceKind;
 use miette::{Context, Result};
 
-use crate::{get_document, server_state::ServerState};
+use crate::{get_document, server_state::ServerState, uri::UriExt};
 
 pub fn process_document_symbol(
     lsp: &mut ServerState,
@@ -26,7 +26,7 @@ pub fn process_document_symbol(
         .collect();
 
     if headers.is_empty() {
-        return Ok(Some(DocumentSymbolResponse::Nested(vec![])));
+        return Ok(Some(DocumentSymbolResponse::DocumentSymbolList(vec![])));
     }
 
     let total_lines = document.content.len_lines() as u32;
@@ -50,7 +50,7 @@ pub fn process_document_symbol(
     let mut idx = 0;
     let symbols = build_symbol_tree(&headers, &section_ranges, &mut idx, 0);
 
-    Ok(Some(DocumentSymbolResponse::Nested(symbols)))
+    Ok(Some(DocumentSymbolResponse::DocumentSymbolList(symbols)))
 }
 
 fn build_symbol_tree(
@@ -80,7 +80,7 @@ fn build_symbol_tree(
         let symbol = DocumentSymbol {
             name: content.clone(),
             detail: None,
-            kind: SymbolKind::STRING,
+            kind: SymbolKind::String,
             tags: None,
             deprecated: None,
             range: section_ranges[current_idx],
@@ -100,7 +100,7 @@ fn build_symbol_tree(
 
 #[cfg(test)]
 mod tests {
-    use lsp_types::{Position, Range};
+    use gen_lsp_types::{Position, Range};
 
     use super::*;
 

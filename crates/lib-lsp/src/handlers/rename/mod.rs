@@ -1,31 +1,17 @@
 pub mod did_rename;
 pub mod will_rename;
 
-use std::collections::HashMap;
+use gen_lsp_types::{PrepareRenameParams, PrepareRenameResult, RenameParams, WorkspaceEdit};
+use miette::Result;
 
-use lib_core::{document::references::ReferenceKind, uri::UriExt};
-use lsp_types::{
-    DocumentChangeOperation, DocumentChanges, OneOf, OptionalVersionedTextDocumentIdentifier,
-    Position, PrepareRenameResponse, Range, RenameFile, RenameParams, ResourceOp, TextDocumentEdit,
-    TextDocumentPositionParams, TextEdit, Uri, WorkspaceEdit,
-};
-use miette::{Context, Result, miette};
-
-use crate::{
-    get_document,
-    handlers::link_resolver::resolve_target_uri,
-    helpers::{generate_link_text, header_slug},
-    server_state::ServerState,
-};
+use crate::server_state::ServerState;
 
 pub fn process_prepare_rename(
-    lsp: &mut ServerState,
-    params: TextDocumentPositionParams,
-) -> Result<Option<PrepareRenameResponse>> {
-    let uri = params.text_document.uri;
-    let position = params.position;
-
-    let document = get_document!(lsp, &uri);
+    _lsp: &mut ServerState,
+    params: PrepareRenameParams,
+) -> Result<Option<PrepareRenameResult>> {
+    let _uri = params.text_document_position_params.text_document.uri;
+    let _position = params.text_document_position_params.position;
 
     // TODO: This was written by AI only, its garbage, Ima redo it eventually using
     // will_rename as the example I wrote
@@ -36,38 +22,40 @@ pub fn process_prepare_rename(
     //             let content_col = r.range.start.character + *level as u32 + 1;
     //             let content_range =
     //                 Range::new(Position::new(r.range.start.line, content_col), r.range.end);
-    //             PrepareRenameResponse::RangeWithPlaceholder {
+    //             PrepareRenameResult::PrepareRenamePlaceholder(PrepareRenamePlaceholder {
     //                 range: content_range,
     //                 placeholder: content.clone(),
-    //             }
+    //             })
     //         }
     //         ReferenceKind::WikiLink { target, alias, .. } => {
-    //             PrepareRenameResponse::RangeWithPlaceholder {
+    //             PrepareRenameResult::PrepareRenamePlaceholder(PrepareRenamePlaceholder {
     //                 range: r.range,
     //                 placeholder: alias.clone().unwrap_or_else(|| target.clone()),
-    //             }
+    //             })
     //         }
-    //         ReferenceKind::Link { alt_text, .. } => PrepareRenameResponse::RangeWithPlaceholder {
-    //             range: r.range,
-    //             placeholder: alt_text.clone(),
+    //         ReferenceKind::Link { alt_text, .. } => {
+    //             PrepareRenameResult::PrepareRenamePlaceholder(PrepareRenamePlaceholder {
+    //                 range: r.range,
+    //                 placeholder: alt_text.clone(),
+    //             })
     //         },
     //     },
     //     // Cursor not on a symbol — let the editor pick the word (renames current file)
-    //     None => PrepareRenameResponse::DefaultBehavior {
+    //     None => PrepareRenameResult::PrepareRenameDefaultBehavior(PrepareRenameDefaultBehavior {
     //         default_behavior: true,
-    //     },
+    //     }),
     // };
 
     Ok(None)
 }
 
 pub fn process_rename(
-    lsp: &mut ServerState,
+    _lsp: &mut ServerState,
     params: RenameParams,
 ) -> Result<Option<WorkspaceEdit>> {
-    let uri = params.text_document_position.text_document.uri;
-    let position = params.text_document_position.position;
-    let new_name = params.new_name;
+    let _uri = params.text_document_position_params.text_document.uri;
+    let _position = params.text_document_position_params.position;
+    let _new_name = params.new_name;
 
     // // Extract reference data before dropping the borrow on lsp
     // let reference_kind = {
@@ -100,6 +88,4 @@ pub fn process_rename(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-}
+mod tests {}

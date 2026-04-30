@@ -1,21 +1,26 @@
-use std::{
-    collections::HashMap,
-    path::{Path, PathBuf},
-    str::FromStr,
-};
+use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
+use gen_lsp_types::{RenameFilesParams, TextEdit, Uri, WorkspaceEdit};
 use lib_core::{
     document::{
         Document,
         references::{Reference, ReferenceKind},
     },
     path::{find_relative_path, resolve_reference_target},
-    uri::UriExt,
 };
-use lsp_types::{RenameFilesParams, TextEdit, Uri, WorkspaceEdit};
 use miette::{IntoDiagnostic, Result};
 
-use crate::ServerState;
+use crate::{ServerState, uri::UriExt};
+
+fn parse_file_rename_uri(uri_str: &str) -> Result<(Uri, PathBuf)> {
+    let uri = Uri::from_str(uri_str).into_diagnostic()?;
+    let path = uri
+        .to_file_path()
+        .map(|c| c.into_owned())
+        .ok_or_else(|| miette::miette!("Invalid URI: {}", uri_str))?;
+
+    Ok((uri, path))
+}
 
 pub fn process_will_rename_files(
     lsp: &mut ServerState,
@@ -27,32 +32,34 @@ pub fn process_will_rename_files(
     let mut changes: HashMap<Uri, Vec<TextEdit>> = HashMap::new();
 
     for file in &files {
-        let old_uri = Uri::from_str(&file.old_uri).into_diagnostic()?;
-        let new_uri = Uri::from_str(&file.new_uri).into_diagnostic()?;
-
-        let old_path = Path::new(&file.old_uri);
-        let new_path = Path::new(&file.new_uri);
+        let (old_uri, old_path) = parse_file_rename_uri(&file.old_uri)?;
+        let (new_uri, new_path) = parse_file_rename_uri(&file.new_uri)?;
 
         // update references connected to the changed file
         for (doc, reference) in find_references_to_uri(lsp, &old_uri) {
-            let new_rel = find_relative_path(old_path, new_path)?;
+            let new_rel = find_relative_path(&doc.path, &new_path)?;
             let new_ref = create_reference_with_new_uri(reference, new_rel);
 
+            let Some(doc_uri) = Uri::from_file_path(&doc.path) else {
+                tracing::debug!("Failed to convert path to URI: {:?}", doc.path);
+                continue;
+            };
+
             changes
-                .entry(doc.uri.clone())
+                .entry(doc_uri)
                 .or_default()
                 .push(TextEdit::new(reference.range, new_ref.to_file_text()));
         }
 
-        // update references inside the renamed file itself
-        if let Some(doc) = lsp.documents.get_document(&old_uri) {
+        // update references in the moved file
+        if let Some(doc) = lsp.documents.get_document(&old_path) {
             for edit in doc
                 .references
                 .iter()
                 .filter(|r| r.kind.is_link())
                 .filter_map(|reference| {
-                    let resolved = resolve_reference_target(old_path, reference).ok()?;
-                    let new_rel = find_relative_path(new_path, resolved).ok()?;
+                    let resolved = resolve_reference_target(&old_path, reference).ok()?;
+                    let new_rel = find_relative_path(&new_path, resolved).ok()?;
                     let new_ref = create_reference_with_new_uri(reference, new_rel);
                     Some(TextEdit::new(reference.range, new_ref.to_file_text()))
                 })
@@ -107,8 +114,7 @@ fn find_references_to_uri<'a>(
                 let match_path = match_path.clone();
 
                 move |reference| {
-                    let doc_path = doc.uri.to_file_path()?;
-                    let resolved_path = resolve_reference_target(doc_path, reference).ok()?;
+                    let resolved_path = resolve_reference_target(&doc.path, reference).ok()?;
 
                     if let Some(ref m_path) = match_path
                         && m_path == &resolved_path

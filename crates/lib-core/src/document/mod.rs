@@ -1,7 +1,7 @@
-use std::{collections::HashMap, fmt::Debug};
+use std::{collections::HashMap, fmt::Debug, path::PathBuf};
 
+use gen_lsp_types::{Diagnostic, DiagnosticSeverity, Position};
 use lib_parser::{InlineMarkdownNode, LinkType, MarkdownNode, Parser, Spanned, markdown_parser};
-use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Uri};
 use miette::Result;
 use references::{Reference, ReferenceKind};
 use ropey::Rope;
@@ -13,7 +13,7 @@ pub mod references;
 
 #[derive(Debug, Clone)]
 pub struct Document {
-    pub uri: Uri,
+    pub path: PathBuf,
     pub frontmatter: HashMap<String, FrontmatterValue>,
     pub version: i32,
     pub content: Rope,
@@ -23,9 +23,9 @@ pub struct Document {
 }
 
 impl Document {
-    pub fn new(uri: Uri, content: &str, version: i32) -> Result<Self> {
+    pub fn new(path: PathBuf, content: &str, version: i32) -> Result<Self> {
         let mut s = Self {
-            uri,
+            path,
             version,
             content: Rope::from_str(content),
             references: Vec::new(),
@@ -62,7 +62,7 @@ impl Document {
         for err in errors {
             self.diagnostics.push(Diagnostic {
                 range: doc_content_slice.byte_to_lsp_range(&err.span().into_range()),
-                severity: Some(DiagnosticSeverity::WARNING),
+                severity: Some(DiagnosticSeverity::Warning),
                 code: None,
                 code_description: None,
                 source: Some("parser".to_string()),

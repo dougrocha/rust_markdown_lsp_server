@@ -1,3 +1,4 @@
+use gen_lsp_types::{Location, Uri};
 use lib_core::{
     document::{
         Document,
@@ -5,9 +6,10 @@ use lib_core::{
     },
     vault::Vault,
 };
-use lsp_types::{Location, Uri};
 
-use crate::{ServerState, handlers::link_resolver::resolve_target_uri, helpers::header_slug};
+use crate::{
+    ServerState, handlers::link_resolver::resolve_target_uri, helpers::header_slug, uri::UriExt,
+};
 
 /// Helper for collecting references to a specific item in the document
 pub(crate) struct ReferenceCollector<'a> {
@@ -20,7 +22,7 @@ pub(crate) struct ReferenceCollector<'a> {
 impl<'a> ReferenceCollector<'a> {
     pub(crate) fn new(
         src_doc: &'a Document,
-        uri: &'a lsp_types::Uri,
+        uri: &'a gen_lsp_types::Uri,
         reference: &'a DocReference,
         lsp: &'a ServerState,
     ) -> Self {
@@ -34,42 +36,35 @@ impl<'a> ReferenceCollector<'a> {
 
     pub(crate) fn collect_from(&self, documents: &Vault) -> Vec<Location> {
         documents
-            .get_references_with_uri()
-            .filter(|(uri, ref_doc)| !self.is_source_reference(uri, ref_doc))
-            .filter_map(|(uri, ref_doc)| self.check_reference_match(uri, ref_doc))
+            .get_references_with_path()
+            .filter_map(|(path, ref_doc)| {
+                let uri = Uri::from_file_path(path)?;
+                if self.is_source_reference(&uri, ref_doc) {
+                    return None;
+                }
+                self.check_reference_match(&uri, ref_doc)
+            })
             .collect()
     }
 
-    /// Collect all references that point to the a file, reaardless of header
+    /// Collect all references that point to the a file, regardless of header
     pub(crate) fn collect_file_reference_locations(
         lsp: &'a ServerState,
         source_uri: &'a Uri,
     ) -> Vec<Location> {
-        Self::collect_file_references(lsp, source_uri)
-            .map(|(uri, reference)| Location::new(uri.clone(), reference.range))
-            .collect()
-    }
-
-    /// Collect all references that point to the a file, reaardless of header
-    pub(crate) fn collect_file_references(
-        lsp: &'a ServerState,
-        source_uri: &'a Uri,
-    ) -> impl Iterator<Item = (&'a Uri, &'a DocReference)> + 'a {
         lsp.documents
-            .get_references_with_uri()
-            .filter(move |(uri, reference)| {
-                let Some(referring_doc) = lsp.documents.get_document(uri) else {
-                    return false;
-                };
+            .get_references_with_path()
+            .filter_map(move |(path, reference)| {
+                let uri = UriExt::from_file_path(path)?;
+                let referring_doc = lsp.documents.get_document(path)?;
 
-                reference
-                    .kind
-                    .get_target()
-                    .and_then(|target| {
-                        Self::resolve_and_check_target(lsp, referring_doc, target, source_uri)
-                    })
-                    .is_some()
+                reference.kind.get_target().and_then(|target| {
+                    Self::resolve_and_check_target(lsp, referring_doc, target, source_uri)
+                })?;
+
+                Some(Location::new(uri, reference.range))
             })
+            .collect()
     }
 
     /// Resolve a target URI and check if it matches the source URI
@@ -91,7 +86,7 @@ impl<'a> ReferenceCollector<'a> {
 
     pub(crate) fn is_source_reference(
         &self,
-        uri: &lsp_types::Uri,
+        uri: &gen_lsp_types::Uri,
         reference: &DocReference,
     ) -> bool {
         uri == self.source_uri && reference.range == self.source_ref.range
@@ -100,7 +95,7 @@ impl<'a> ReferenceCollector<'a> {
     /// Check if a reference matches our source reference and return its location if so
     pub(crate) fn check_reference_match(
         &self,
-        uri: &lsp_types::Uri,
+        uri: &gen_lsp_types::Uri,
         reference: &DocReference,
     ) -> Option<Location> {
         match &self.source_ref.kind {
@@ -126,7 +121,7 @@ impl<'a> ReferenceCollector<'a> {
     /// Find links that reference the given header
     pub(crate) fn match_header_reference(
         &self,
-        uri: &lsp_types::Uri,
+        uri: &gen_lsp_types::Uri,
         reference: &DocReference,
         source_content: &str,
     ) -> Option<Location> {
@@ -145,10 +140,10 @@ impl<'a> ReferenceCollector<'a> {
 
     pub(crate) fn match_link_reference(
         &self,
-        uri: &lsp_types::Uri,
+        uri: &gen_lsp_types::Uri,
         reference: &DocReference,
         source_header: Option<&str>,
-        source_target: &lsp_types::Uri,
+        source_target: &gen_lsp_types::Uri,
     ) -> Option<Location> {
         let location = Location::new(uri.clone(), reference.range);
 
@@ -166,7 +161,7 @@ impl<'a> ReferenceCollector<'a> {
         &self,
         reference: &DocReference,
         source_header: Option<&str>,
-        source_target: &lsp_types::Uri,
+        source_target: &gen_lsp_types::Uri,
     ) -> Option<()> {
         let target = reference.kind.get_target()?;
 
@@ -184,9 +179,9 @@ impl<'a> ReferenceCollector<'a> {
     pub(crate) fn match_link_to_header(
         &self,
         reference: &DocReference,
-        uri: &lsp_types::Uri,
+        uri: &gen_lsp_types::Uri,
         source_header: Option<&str>,
-        source_target: &lsp_types::Uri,
+        source_target: &gen_lsp_types::Uri,
     ) -> Option<()> {
         if uri != source_target {
             return None;

@@ -1,24 +1,23 @@
-use lib_core::{document::references::ReferenceKind, uri::UriExt};
-
-use lsp_types::{
-    CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
-    CreateFile, DeleteFile, DeleteFileOptions, DocumentChangeOperation, DocumentChanges, OneOf,
-    OptionalVersionedTextDocumentIdentifier, Position, Range, ResourceOp, TextDocumentEdit,
-    TextEdit, Uri, WorkspaceEdit,
+use gen_lsp_types::{
+    CodeAction, CodeActionKind, CodeActionParams, CodeActionResponse, CreateFile, DeleteFile,
+    DeleteFileOptions, DocumentChange, Edit, OptionalVersionedTextDocumentIdentifier, Position,
+    Range, TextDocumentEdit, TextEdit, Uri, WorkspaceEdit,
 };
-use miette::{Context, Result};
+use lib_core::document::references::ReferenceKind;
+use miette::{Context, Result, miette};
 
 use crate::{
     get_document,
     handlers::link_resolver::resolve_target_uri,
     helpers::{extract_header_section, generate_link_text, get_content},
     server_state::ServerState,
+    uri::UriExt,
 };
 
 pub fn process_code_action(
     lsp: &mut ServerState,
     params: CodeActionParams,
-) -> Result<Option<CodeActionResponse>> {
+) -> Result<Option<Vec<CodeActionResponse>>> {
     let uri = params.text_document.uri;
     let range = params.range;
 
@@ -27,7 +26,7 @@ pub fn process_code_action(
         return handle_non_range(lsp, &uri, &range);
     }
 
-    let actions: Vec<CodeActionOrCommand> = Vec::new();
+    let actions: Vec<CodeActionResponse> = Vec::new();
 
     Ok(Some(actions))
 }
@@ -36,25 +35,23 @@ fn handle_non_range(
     lsp: &mut ServerState,
     uri: &Uri,
     range: &Range,
-) -> Result<Option<CodeActionResponse>> {
+) -> Result<Option<Vec<CodeActionResponse>>> {
     let document = get_document!(lsp, uri);
     let slice = document.content.slice(..);
 
-    let source_root = lsp.get_workspace_root_for_uri(&document.uri);
+    let source_root = lsp.get_workspace_root_for_path(&document.path);
 
     let Some(reference) = document.get_reference_at_position(range.start) else {
         return Ok(Some(vec![]));
     };
 
-    let parent_uri = uri
+    let doc_parent_path = document
+        .path
         .parent()
-        .context("Could not determine parent directory")?;
+        .ok_or_else(|| miette!("Could not determine parent directory"))?;
 
-    let parent_path = parent_uri
-        .to_file_path()
-        .context("Parent URI should be valid path here")?;
+    let mut actions: Vec<CodeActionResponse> = Vec::new();
 
-    let mut actions: Vec<CodeActionOrCommand> = Vec::new();
     match &reference.kind {
         ReferenceKind::Header { content, level } => {
             let (header_content, range) =
@@ -70,45 +67,49 @@ fn handle_non_range(
                     % 1000000) as u32
             );
 
-            let new_file_path = parent_path.join(new_filename);
+            let new_file_path = doc_parent_path.join(new_filename);
             let new_file_uri = Uri::from_file_path(new_file_path)
                 .context("new document should be a valid path")?;
 
             if let Some(header_content) = header_content {
-                let document_changes = DocumentChanges::Operations(vec![
-                    DocumentChangeOperation::Op(ResourceOp::Create(CreateFile {
+                let document_changes = vec![
+                    DocumentChange::CreateFile(CreateFile {
                         uri: new_file_uri.clone(),
                         options: None,
                         annotation_id: None,
-                    })),
-                    DocumentChangeOperation::Edit(TextDocumentEdit {
+                    }),
+                    DocumentChange::TextDocumentEdit(TextDocumentEdit {
                         text_document: OptionalVersionedTextDocumentIdentifier {
-                            uri: new_file_uri.clone(),
+                            text_document_identifier: gen_lsp_types::TextDocumentIdentifier {
+                                uri: new_file_uri.clone(),
+                            },
                             version: None,
                         },
-                        edits: vec![OneOf::Left(TextEdit::new(
+                        edits: vec![Edit::TextEdit(TextEdit::new(
                             Range::new(Position::new(0, 0), Position::new(0, 0)),
                             normalize_header_levels(&header_content.to_string(), delta),
                         ))],
                     }),
-                    DocumentChangeOperation::Edit(TextDocumentEdit {
+                    DocumentChange::TextDocumentEdit(TextDocumentEdit {
                         text_document: OptionalVersionedTextDocumentIdentifier {
-                            uri: uri.clone(),
+                            text_document_identifier: gen_lsp_types::TextDocumentIdentifier {
+                                uri: uri.clone(),
+                            },
                             version: Some(document.version),
                         },
-                        edits: vec![OneOf::Left(TextEdit::new(range, {
+                        edits: vec![Edit::TextEdit(TextEdit::new(range, {
                             let link_text = generate_link_text(
                                 &lsp.config.links,
                                 uri,
                                 &new_file_uri,
                                 source_root,
                             )
-                            .unwrap_or_else(|_| new_file_uri.to_string());
+                            .unwrap_or_else(|_| new_file_uri.as_ref().to_string());
 
                             format!("[{content}]({link_text})\n\n")
                         }))],
                     }),
-                ]);
+                ];
 
                 let workspace_edit = WorkspaceEdit {
                     changes: None,
@@ -116,15 +117,12 @@ fn handle_non_range(
                     change_annotations: None,
                 };
 
-                actions.push(
-                    CodeAction {
-                        title: "Extract header & section".to_owned(),
-                        kind: Some(CodeActionKind::REFACTOR_EXTRACT),
-                        edit: Some(workspace_edit),
-                        ..Default::default()
-                    }
-                    .into(),
-                );
+                actions.push(CodeActionResponse::CodeAction(CodeAction {
+                    title: "Extract header & section".to_owned(),
+                    kind: Some(CodeActionKind::RefactorExtract),
+                    edit: Some(workspace_edit),
+                    ..Default::default()
+                }));
             }
         }
         ReferenceKind::Link { target, header, .. }
@@ -134,13 +132,15 @@ fn handle_non_range(
             // TODO: normalize later
             let target_doc_content = get_content(lsp, document, target, header.as_deref())?;
 
-            let document_changes = DocumentChanges::Operations(vec![
-                DocumentChangeOperation::Edit(TextDocumentEdit {
+            let document_changes = vec![
+                DocumentChange::TextDocumentEdit(TextDocumentEdit {
                     text_document: OptionalVersionedTextDocumentIdentifier {
-                        uri: uri.clone(),
+                        text_document_identifier: gen_lsp_types::TextDocumentIdentifier {
+                            uri: uri.clone(),
+                        },
                         version: Some(document.version),
                     },
-                    edits: vec![OneOf::Left(TextEdit::new(
+                    edits: vec![Edit::TextEdit(TextEdit::new(
                         reference.range,
                         target_doc_content,
                     ))],
@@ -148,15 +148,15 @@ fn handle_non_range(
                 // TODO: This is okay if our link does not include a header,
                 // if the link is link#header and header is a small section of the file
                 // you see what i mean?
-                DocumentChangeOperation::Op(ResourceOp::Delete(DeleteFile {
+                DocumentChange::DeleteFile(DeleteFile {
                     uri: target_uri,
                     options: Some(DeleteFileOptions {
                         ignore_if_not_exists: Some(false),
                         recursive: None,
-                        annotation_id: None,
                     }),
-                })),
-            ]);
+                    annotation_id: None,
+                }),
+            ];
 
             let workspace_edit = WorkspaceEdit {
                 changes: None,
@@ -164,15 +164,12 @@ fn handle_non_range(
                 change_annotations: None,
             };
 
-            actions.push(
-                CodeAction {
-                    title: "Inline section".to_owned(),
-                    kind: Some(CodeActionKind::REFACTOR_INLINE),
-                    edit: Some(workspace_edit),
-                    ..Default::default()
-                }
-                .into(),
-            );
+            actions.push(CodeActionResponse::CodeAction(CodeAction {
+                title: "Inline section".to_owned(),
+                kind: Some(CodeActionKind::RefactorInline),
+                edit: Some(workspace_edit),
+                ..Default::default()
+            }));
         }
     }
 

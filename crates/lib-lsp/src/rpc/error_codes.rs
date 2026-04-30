@@ -7,3 +7,5 @@ pub const METHOD_NOT_FOUND: i64 = -32601;
 pub const INVALID_PARAMS: i64 = -32602;
 
 pub const INTERNAL_ERROR: i64 = -32603;
+
+pub const REQUEST_FAILED: i64 = -32002;

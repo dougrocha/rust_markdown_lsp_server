@@ -1,14 +1,16 @@
-use lsp_types::{Location, ReferenceParams};
+use gen_lsp_types::{Location, ReferenceParams};
 use miette::{Context, Result};
 
-use crate::{get_document, helpers::references::ReferenceCollector, server_state::ServerState};
+use crate::{
+    get_document, helpers::references::ReferenceCollector, server_state::ServerState, uri::UriExt,
+};
 
 pub fn process_references(
     lsp: &mut ServerState,
     params: ReferenceParams,
 ) -> Result<Option<Vec<Location>>> {
-    let uri = params.text_document_position.text_document.uri;
-    let position = params.text_document_position.position;
+    let uri = params.text_document_position_params.text_document.uri;
+    let position = params.text_document_position_params.position;
 
     let document = get_document!(lsp, &uri);
     let reference_at_position = document.get_reference_at_position(position);

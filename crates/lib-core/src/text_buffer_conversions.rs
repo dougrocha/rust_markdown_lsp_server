@@ -1,6 +1,6 @@
 use std::ops::Range;
 
-use lsp_types::Position;
+use gen_lsp_types::{Position, Range as LspRange};
 use ropey::RopeSlice;
 
 pub trait TextBufferConversions {
@@ -21,22 +21,19 @@ pub trait TextBufferConversions {
     }
 
     /// Converts a byte offset span (Range<usize>) to an LSP-compatible Range.
-    fn byte_to_lsp_range(&self, span: &Range<usize>) -> lsp_types::Range {
-        // Default implementation using the position converters
-        // Handle empty ranges at the end of the content correctly
+    fn byte_to_lsp_range(&self, span: &Range<usize>) -> LspRange {
         if span.is_empty() && span.start == self.byte_len() {
             let pos = self.byte_offset_to_position(span.start);
-            return lsp_types::Range::new(pos, pos);
+            return LspRange::new(pos, pos);
         }
 
         let start_pos = self.byte_offset_to_position(span.start);
         let end_pos = self.byte_offset_to_position(span.end);
-        lsp_types::Range::new(start_pos, end_pos)
+        LspRange::new(start_pos, end_pos)
     }
 
     /// Converts an LSP-compatible Range to a byte offset span.
-    fn lsp_to_byte_range(&self, range: &lsp_types::Range) -> Range<usize> {
-        // Default implementation using the position converters
+    fn lsp_to_byte_range(&self, range: &LspRange) -> Range<usize> {
         let start_byte = self.position_to_byte_offset(range.start);
         let end_byte = self.position_to_byte_offset(range.end);
         start_byte..end_byte
@@ -54,7 +51,6 @@ impl TextBufferConversions for RopeSlice<'_> {
 
         let line_idx = self.byte_to_line(byte_offset);
 
-        // Safety: We already checked byte_offset bounds, so these shouldn't panic
         let line_start_char = self.line_to_char(line_idx);
         let global_char_idx = self.byte_to_char(byte_offset);
 

@@ -1,9 +1,11 @@
-use lsp_types::{ClientCapabilities, Uri, WorkspaceFolder};
+use std::path::Path;
+
+use gen_lsp_types::{ClientCapabilities, Uri, WorkspaceFolder};
 use miette::Result;
 
-use lib_core::{uri::UriExt, vault::Vault};
+use lib_core::{config::Config, vault::Vault};
 
-use crate::config::Config;
+use crate::uri::UriExt;
 
 #[derive(Default)]
 pub struct ServerState {
@@ -78,24 +80,29 @@ impl ServerState {
                     }
                 };
 
-                if let Some(uri) = Uri::from_file_path(entry_path) {
-                    self.documents.create_document(uri, 0, &contents)?;
-                }
+                self.documents
+                    .create_document(entry_path.to_path_buf(), 0, &contents)?;
             }
         }
 
         Ok(())
     }
 
-    /// Look at all workspaces and take the shortest root
-    ///
-    /// Sort by length ensures we get the most specific (deepest) folder if they are nested
+    /// Look at all workspaces and take the most specific (deepest) root for the given URI.
     pub fn get_workspace_root_for_uri(&self, document_uri: &Uri) -> Option<&Uri> {
         if self.workspace_roots.len() == 1 {
             return self.workspace_roots.first();
         }
 
         let doc_path = document_uri.to_file_path()?;
+        self.get_workspace_root_for_path(&doc_path)
+    }
+
+    /// Look at all workspaces and take the most specific (deepest) root for the given path.
+    pub fn get_workspace_root_for_path(&self, doc_path: &Path) -> Option<&Uri> {
+        if self.workspace_roots.len() == 1 {
+            return self.workspace_roots.first();
+        }
 
         self.workspace_roots
             .iter()
@@ -106,6 +113,6 @@ impl ServerState {
                     false
                 }
             })
-            .max_by_key(|uri| uri.path().as_estr().as_str().len())
+            .max_by_key(|uri| uri.as_ref().len())
     }
 }

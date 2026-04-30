@@ -1,6 +1,7 @@
-use crate::ServerState;
-use lsp_types::{CreateFilesParams, WorkspaceEdit};
+use gen_lsp_types::{CreateFilesParams, WorkspaceEdit};
 use miette::Result;
+
+use crate::ServerState;
 
 // TODO: this will handle potential actions like creating a file with yaml metadata already in it
 pub fn process_will_create_files(

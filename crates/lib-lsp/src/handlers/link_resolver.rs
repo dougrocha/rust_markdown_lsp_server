@@ -1,14 +1,14 @@
-use lsp_types::Uri;
+use gen_lsp_types::Uri;
 use miette::{Result, miette};
 
 use lib_core::{
+    config::LinkConfig,
     document::Document,
-    path::{combine_and_normalize, extract_filename_stem},
-    uri::UriExt,
+    path::{combine_and_normalize, extract_filename_stem, slug::filename_slug},
     vault::Vault,
 };
 
-use crate::{ServerState, config::LinkConfig, helpers::slug::filename_slug};
+use crate::{ServerState, uri::UriExt};
 
 // TODO: Rethinl this whole flow here
 // I need to try to make this non lsp specific so remove server state and just make it
@@ -19,7 +19,7 @@ use crate::{ServerState, config::LinkConfig, helpers::slug::filename_slug};
 // After everthing, move this all to lsp-core
 
 pub fn resolve_target_uri(lsp: &ServerState, document: &Document, target: &str) -> Result<Uri> {
-    let active_root = lsp.get_workspace_root_for_uri(&document.uri);
+    let active_root = lsp.get_workspace_root_for_path(&document.path);
 
     resolve_link(
         target,
@@ -83,13 +83,8 @@ fn resolve_as_path(
         Uri::from_file_path(target_path)
             .ok_or_else(|| miette!("Failed to create URI from absolute path: {}", target))
     } else {
-        let source_doc_path = source_doc
-            .uri
-            .to_file_path()
-            .ok_or_else(|| miette!("Could not turn uri to file path!"))?;
-
         let resolved =
-            combine_and_normalize(source_doc_path, target).map_err(|e| miette!("{e}"))?;
+            combine_and_normalize(&source_doc.path, target).map_err(|e| miette!("{e}"))?;
 
         Uri::from_file_path(resolved)
             .ok_or_else(|| miette!("Failed to create URI from resolved path: {}", target))
@@ -106,11 +101,11 @@ fn resolve_by_filename(target: &str, documents: &Vault, _config: &LinkConfig) ->
 
     let normalized_target = filename_slug(target_stem);
     documents.iter().find_map(|doc| {
-        let doc_filename = extract_filename_stem(&doc.uri)?;
+        let doc_filename = extract_filename_stem(&doc.path)?;
         let normalized_doc = filename_slug(&doc_filename);
 
         if normalized_target == normalized_doc {
-            Some(doc.uri.clone())
+            Uri::from_file_path(&doc.path)
         } else {
             None
         }

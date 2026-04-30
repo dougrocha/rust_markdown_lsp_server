@@ -1,10 +1,10 @@
 use lib_core::document::references::ReferenceKind;
 
-use lsp_types::{Hover, HoverContents, HoverParams, MarkupContent, MarkupKind};
+use gen_lsp_types::{Contents, Hover, HoverParams, MarkupContent, MarkupKind};
 use miette::{Context, Result};
 use tracing::debug;
 
-use crate::{get_document, helpers::get_content, server_state::ServerState};
+use crate::{get_document, helpers::get_content, server_state::ServerState, uri::UriExt};
 
 pub fn process_hover(lsp: &mut ServerState, params: HoverParams) -> Result<Option<Hover>> {
     let uri = params.text_document_position_params.text_document.uri;
@@ -26,7 +26,7 @@ pub fn process_hover(lsp: &mut ServerState, params: HoverParams) -> Result<Optio
                 );
                 let contents = get_content(lsp, document, target, header.as_deref())?;
                 Ok(Some(Hover {
-                    contents: HoverContents::Markup(MarkupContent {
+                    contents: Contents::MarkupContent(MarkupContent {
                         kind: MarkupKind::Markdown,
                         value: contents,
                     }),

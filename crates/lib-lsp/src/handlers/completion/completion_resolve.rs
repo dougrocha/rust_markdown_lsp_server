@@ -1,4 +1,4 @@
-use lsp_types::CompletionItem;
+use gen_lsp_types::CompletionItem;
 use miette::Result;
 
 use crate::server_state::ServerState;

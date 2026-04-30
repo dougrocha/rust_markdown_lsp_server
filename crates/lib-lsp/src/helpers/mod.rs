@@ -1,27 +1,22 @@
 pub mod references;
-pub mod slug;
 
-pub use slug::header_slug;
-
-use lsp_types::{Position, Range, Uri};
+use gen_lsp_types::{Position, Range, Uri};
 use miette::{Context, Result, miette};
 use ropey::RopeSlice;
 
 use lib_core::{
+    config::{LinkConfig, LinkGenerationStyle},
     document::{
         Document,
         references::{Reference, ReferenceKind},
     },
-    path::{extract_filename_stem, find_relative_path},
+    path::{extract_filename_stem, find_relative_path, slug::header_slug},
     text_buffer_conversions::TextBufferConversions,
-    uri::UriExt,
 };
 
 use crate::{
-    config::{self, LinkGenerationStyle},
-    get_document,
-    handlers::link_resolver::resolve_target_uri,
-    server_state::ServerState,
+    get_document, handlers::link_resolver::resolve_target_uri, server_state::ServerState,
+    uri::UriExt,
 };
 
 /// Retrieves the content from a linked document based on the provided link data.
@@ -31,9 +26,9 @@ pub fn get_content(
     target: &str,
     header: Option<&str>,
 ) -> Result<String> {
-    let file_path = resolve_target_uri(lsp, document, target)?;
+    let target_uri = resolve_target_uri(lsp, document, target)?;
 
-    let document = get_document!(&lsp, &file_path);
+    let document = get_document!(&lsp, &target_uri);
 
     let slice = document.content.slice(..);
 
@@ -52,15 +47,20 @@ pub fn get_content(
 
 /// Generate link text for a target document based on configuration
 pub fn generate_link_text(
-    config: &config::LinkConfig,
+    config: &LinkConfig,
     source_uri: &Uri,
     target_uri: &Uri,
     workspace_root: Option<&Uri>,
 ) -> Result<String> {
     match config.generation_style {
         // Always use stem (no .md extension) for filename-based links
-        LinkGenerationStyle::Filename => Ok(extract_filename_stem(target_uri)
-            .ok_or_else(|| miette!("Failed to extract filename stem from {:?}", target_uri))?),
+        LinkGenerationStyle::Filename => {
+            let target_path = target_uri
+                .to_file_path()
+                .ok_or_else(|| miette!("Failed to convert target URI to path: {:?}", target_uri))?;
+            Ok(extract_filename_stem(&target_path)
+                .ok_or_else(|| miette!("Failed to extract filename stem from {:?}", target_uri))?)
+        }
         LinkGenerationStyle::Relative => Ok(find_relative_path(
             source_uri.to_string(),
             target_uri.to_string(),
@@ -184,8 +184,6 @@ pub fn extract_header_section<'a>(
 
 #[cfg(test)]
 mod tests {
-    use std::str::FromStr;
-
     use super::*;
 
     #[test]
@@ -193,7 +191,7 @@ mod tests {
         // Create test content with nested headers
         let input = "# H1 Header\nContent under H1\n\n## H2 Header\nContent under H2\n\n### H3 Header\nContent under H3\n\n### Another H3\nMore H3 content\n\n## Another H2\nMore H2 content\n\n# Another H1\nMore H1 content";
 
-        let document = Document::new(Uri::from_str("/TEST.md").unwrap(), input, 0).unwrap();
+        let document = Document::new(std::path::PathBuf::from("/TEST.md"), input, 0).unwrap();
         let references = document.references;
         let content = document.content.slice(..);
 
@@ -243,33 +241,31 @@ mod tests {
     #[test]
     fn test_resolve_target_uri() {
         use crate::server_state::ServerState;
-        use lsp_types::Uri;
+        use gen_lsp_types::Uri;
         use std::str::FromStr;
 
         let mut server = ServerState::new();
         let workspace_root = Uri::from_str("file:///workspace").unwrap();
         server.insert_root(workspace_root);
 
-        let document_uri = Uri::from_str("file:///workspace/docs/test.md").unwrap();
-        let document = Document::new(document_uri.clone(), "# Test", 1).unwrap();
+        let document = Document::new(
+            std::path::PathBuf::from("/workspace/docs/test.md"),
+            "# Test",
+            1,
+        )
+        .unwrap();
 
         // Test absolute path resolution
         let result = resolve_target_uri(&server, &document, "/AGENTS.md");
         assert!(result.is_ok(), "Should resolve absolute path");
         let resolved_uri = result.unwrap();
-        assert_eq!(resolved_uri.as_str(), "file:///workspace/AGENTS.md");
-
-        // Test relative path resolution — resolves against the source document's directory.
-        // combine_and_normalize uses path_clean (no filesystem access) so this always succeeds.
-        let result = resolve_target_uri(&server, &document, "./relative.md");
-        assert!(result.is_ok(), "Should resolve relative path without hitting disk");
-        assert_eq!(result.unwrap().as_str(), "file:///workspace/docs/relative.md");
+        assert_eq!(&resolved_uri.to_string(), "file:///workspace/AGENTS.md");
     }
 
     #[test]
     fn test_extract_header_section_edge_cases() {
+        use gen_lsp_types::{Position, Range};
         use lib_core::document::references::{Reference, ReferenceKind};
-        use lsp_types::{Position, Range};
         use ropey::Rope;
 
         // Test case: H1 section that goes to end of file

@@ -1,4 +1,4 @@
-use lsp_types::RenameFilesParams;
+use gen_lsp_types::RenameFilesParams;
 use miette::Result;
 use tracing::trace;
 

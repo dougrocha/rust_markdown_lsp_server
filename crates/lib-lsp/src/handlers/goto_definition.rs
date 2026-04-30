@@ -1,17 +1,20 @@
-use lib_core::document::{Document, references::ReferenceKind};
+use lib_core::{
+    document::{Document, references::ReferenceKind},
+    path::slug::header_slug,
+};
 
-use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range};
-use miette::{Context, Result};
+use gen_lsp_types::{Definition, DefinitionParams, DefinitionResponse, Location, Range};
+use miette::{Context, Result, miette};
 
 use crate::{
-    get_document, handlers::link_resolver::resolve_target_uri, helpers::header_slug,
-    server_state::ServerState,
+    get_document, handlers::link_resolver::resolve_target_uri, server_state::ServerState,
+    uri::UriExt,
 };
 
 pub fn process_goto_definition(
     lsp: &mut ServerState,
-    params: GotoDefinitionParams,
-) -> Result<Option<GotoDefinitionResponse>> {
+    params: DefinitionParams,
+) -> Result<Option<DefinitionResponse>> {
     let uri = params.text_document_position_params.text_document.uri;
     let position = params.text_document_position_params.position;
 
@@ -26,10 +29,15 @@ pub fn process_goto_definition(
         | ReferenceKind::WikiLink { target, header, .. } => {
             let (target_doc, range) = find_definition(lsp, document, target, header.as_deref())?;
 
-            Ok(Some(GotoDefinitionResponse::Scalar(Location {
-                uri: target_doc.uri.clone(),
-                range,
-            })))
+            let target_uri = UriExt::from_file_path(&target_doc.path)
+                .ok_or_else(|| miette!("Failed to convert path to URI: {:?}", target_doc.path))?;
+
+            Ok(Some(DefinitionResponse::Definition(Definition::Location(
+                Location {
+                    uri: target_uri,
+                    range,
+                },
+            ))))
         }
         _ => Ok(None),
     }

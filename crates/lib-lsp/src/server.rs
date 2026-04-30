@@ -1,8 +1,4 @@
-use lsp_types::{
-    InitializeParams, error_codes,
-    notification::{self, Notification as LspNotification},
-    request::{self, Request as LspRequest},
-};
+use gen_lsp_types::{InitializeParams, Notification as LspNotification, Request as LspRequest};
 use miette::{Result, miette};
 use std::io::{self, BufRead, Write};
 
@@ -42,7 +38,14 @@ pub fn run_lsp() -> Result<()> {
     lsp.load_config("rust-markdown-lsp.toml");
 
     let init_params = handle_initialize(&mut reader, &mut writer)?;
-    lsp.load_workspaces(init_params.workspace_folders)?;
+    let workspace_folders = match init_params
+        .workspace_folders_initialize_params
+        .workspace_folders
+    {
+        Some(gen_lsp_types::WorkspaceFolders::WorkspaceFolderList(folders)) => Some(folders),
+        _ => None,
+    };
+    lsp.load_workspaces(workspace_folders)?;
     lsp.set_client_capabilities(init_params.capabilities);
 
     loop {
@@ -57,19 +60,19 @@ pub fn run_lsp() -> Result<()> {
                     }
                     _ => {
                         dispatch_lsp_request!(&mut lsp, request, &mut writer, {
-                            request::HoverRequest => process_hover,
-                            request::GotoDefinition => process_goto_definition,
-                            request::CodeActionRequest => process_code_action,
-                            request::Completion => process_completion,
-                            request::ResolveCompletionItem => process_completion_resolve,
-                            request::References => process_references,
-                            request::DocumentDiagnosticRequest => process_diagnostic,
-                            request::DocumentSymbolRequest => process_document_symbol,
-                            request::WorkspaceSymbolRequest => process_workspace_symbol,
-                            request::PrepareRenameRequest => process_prepare_rename,
-                            request::Rename => process_rename,
-                            request::WillRenameFiles => process_will_rename_files,
-                            request::WillCreateFiles => process_will_create_files,
+                            gen_lsp_types::HoverRequest => process_hover,
+                            gen_lsp_types::DefinitionRequest => process_goto_definition,
+                            gen_lsp_types::CodeActionRequest => process_code_action,
+                            gen_lsp_types::CompletionRequest => process_completion,
+                            gen_lsp_types::CompletionResolveRequest => process_completion_resolve,
+                            gen_lsp_types::ReferencesRequest => process_references,
+                            gen_lsp_types::DocumentDiagnosticRequest => process_diagnostic,
+                            gen_lsp_types::DocumentSymbolRequest => process_document_symbol,
+                            gen_lsp_types::WorkspaceSymbolRequest => process_workspace_symbol,
+                            gen_lsp_types::PrepareRenameRequest => process_prepare_rename,
+                            gen_lsp_types::RenameRequest => process_rename,
+                            gen_lsp_types::WillRenameFilesRequest => process_will_rename_files,
+                            gen_lsp_types::WillCreateFilesRequest => process_will_create_files,
                         });
                     }
                 }
@@ -86,11 +89,11 @@ pub fn run_lsp() -> Result<()> {
                     }
                     _ => {
                         dispatch_lsp_notification!(&mut lsp, notification, {
-                            notification::DidOpenTextDocument => process_did_open,
-                            notification::DidChangeTextDocument => process_did_change,
-                            notification::DidCloseTextDocument => process_did_close,
-                            notification::DidRenameFiles => process_did_rename,
-                            notification::DidCreateFiles => process_did_create,
+                            gen_lsp_types::DidOpenTextDocumentNotification => process_did_open,
+                            gen_lsp_types::DidChangeTextDocumentNotification => process_did_change,
+                            gen_lsp_types::DidCloseTextDocumentNotification => process_did_close,
+                            gen_lsp_types::DidRenameFilesNotification => process_did_rename,
+                            gen_lsp_types::DidCreateFilesNotification => process_did_create,
                         });
                     }
                 }
@@ -124,7 +127,7 @@ where
 
 /// Handles a typed LSP request by deserializing params, calling handler, and writing response.
 /// Called by the `dispatch_lsp_request!` macro.
-#[tracing::instrument(skip_all, fields(method = R::METHOD))]
+#[tracing::instrument(skip_all, fields(method = %R::METHOD))]
 pub(crate) fn handle_request<R, W, F>(
     lsp: &mut ServerState,
     raw_request: Request,
@@ -155,7 +158,11 @@ where
         Ok(result) => Response::from_ok(raw_request.id, result),
         Err(err) => {
             tracing::error!("Request failed [method: {}]: {:?}", R::METHOD, err);
-            Response::from_error(raw_request.id, error_codes::REQUEST_FAILED, err.to_string())
+            Response::from_error(
+                raw_request.id,
+                rpc::error_codes::REQUEST_FAILED,
+                err.to_string(),
+            )
         }
     };
 
@@ -165,7 +172,7 @@ where
     Ok(())
 }
 
-#[tracing::instrument(skip_all, fields(method = R::METHOD))]
+#[tracing::instrument(skip_all, fields(method = %R::METHOD))]
 pub(crate) fn handle_notification<R, F>(
     lsp: &mut ServerState,
     raw_notification: Notification,

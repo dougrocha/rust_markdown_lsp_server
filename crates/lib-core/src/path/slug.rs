@@ -1,5 +1,3 @@
-// TODO: Move this lsp-core
-
 /// Normalizes a header string to a GFM-compatible anchor slug
 pub fn header_slug(content: &str) -> String {
     let mut result = String::with_capacity(content.len());

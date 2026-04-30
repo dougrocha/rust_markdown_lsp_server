@@ -1,11 +1,11 @@
-use lsp_types::{
-    CodeActionKind, CodeActionOptions, CodeActionProviderCapability, CompletionOptions,
-    DiagnosticOptions, DiagnosticRegistrationOptions, DiagnosticServerCapabilities,
-    DocumentSymbolOptions, FileOperationFilter, FileOperationPattern, FileOperationPatternKind,
-    FileOperationRegistrationOptions, HoverProviderCapability, InitializeParams, InitializeResult,
-    OneOf, RenameOptions, ServerCapabilities, ServerInfo, TextDocumentSyncCapability,
-    TextDocumentSyncKind, WorkspaceFileOperationsServerCapabilities,
-    WorkspaceFoldersServerCapabilities, WorkspaceServerCapabilities, WorkspaceSymbolOptions,
+use gen_lsp_types::{
+    ChangeNotifications, CodeActionOptions, CodeActionProvider, CompletionOptions,
+    DefinitionProvider, DiagnosticOptions, DiagnosticProvider, DocumentSymbolOptions,
+    DocumentSymbolProvider, FileOperationFilter, FileOperationOptions, FileOperationPattern,
+    FileOperationPatternKind, FileOperationRegistrationOptions, HoverProvider, InitializeParams,
+    InitializeResult, ReferenceOptions, ReferencesProvider, RenameOptions, RenameProvider,
+    ServerCapabilities, ServerInfo, TextDocumentSync, WorkspaceFoldersServerCapabilities,
+    WorkspaceOptions, WorkspaceSymbolOptions, WorkspaceSymbolProvider,
 };
 use miette::{IntoDiagnostic, Result};
 
@@ -28,34 +28,35 @@ pub fn process_initialize(request: Request) -> Result<(Response, InitializeParam
 
     let initialize_result = InitializeResult {
         capabilities: ServerCapabilities {
-            text_document_sync: Some(TextDocumentSyncCapability::Kind(TextDocumentSyncKind::FULL)),
-            hover_provider: Some(HoverProviderCapability::Simple(true)),
-            definition_provider: Some(OneOf::Left(true)),
-            code_action_provider: Some(CodeActionProviderCapability::Options(CodeActionOptions {
-                code_action_kinds: Some(vec![CodeActionKind::REFACTOR_EXTRACT]),
+            text_document_sync: Some(TextDocumentSync::Kind(
+                gen_lsp_types::TextDocumentSyncKind::Full,
+            )),
+            hover_provider: Some(HoverProvider::Bool(true)),
+            definition_provider: Some(DefinitionProvider::Bool(true)),
+            code_action_provider: Some(CodeActionProvider::CodeActionOptions(CodeActionOptions {
+                code_action_kinds: Some(vec![gen_lsp_types::CodeActionKind::RefactorExtract]),
                 ..Default::default()
             })),
-            diagnostic_provider: Some(DiagnosticServerCapabilities::RegistrationOptions(
-                DiagnosticRegistrationOptions {
-                    diagnostic_options: DiagnosticOptions {
-                        inter_file_dependencies: true,
-                        workspace_diagnostics: true,
-                        ..Default::default()
-                    },
+            diagnostic_provider: Some(DiagnosticProvider::DiagnosticOptions(DiagnosticOptions {
+                inter_file_dependencies: true,
+                workspace_diagnostics: true,
+                ..Default::default()
+            })),
+            references_provider: Some(ReferencesProvider::ReferenceOptions(ReferenceOptions {
+                ..Default::default()
+            })),
+            document_symbol_provider: Some(DocumentSymbolProvider::DocumentSymbolOptions(
+                DocumentSymbolOptions {
+                    label: Some("Markdown Symbols".to_string()),
                     ..Default::default()
                 },
             )),
-            references_provider: Some(OneOf::Left(true)),
-            document_symbol_provider: Some(OneOf::Right(DocumentSymbolOptions {
-                label: Some("Markdown Symbols".to_string()),
-                work_done_progress_options: Default::default(),
-            })),
-            workspace: Some(WorkspaceServerCapabilities {
+            workspace: Some(WorkspaceOptions {
                 workspace_folders: Some(WorkspaceFoldersServerCapabilities {
                     supported: Some(true),
-                    change_notifications: Some(OneOf::Left(true)),
+                    change_notifications: Some(ChangeNotifications::Bool(true)),
                 }),
-                file_operations: Some(WorkspaceFileOperationsServerCapabilities {
+                file_operations: Some(FileOperationOptions {
                     will_rename: Some(FileOperationRegistrationOptions {
                         filters: vec![markdown_file_filter.clone()],
                     }),
@@ -64,14 +65,17 @@ pub fn process_initialize(request: Request) -> Result<(Response, InitializeParam
                     }),
                     ..Default::default()
                 }),
+                ..Default::default()
             }),
-            workspace_symbol_provider: Some(OneOf::Right(WorkspaceSymbolOptions {
-                resolve_provider: Some(false),
-                work_done_progress_options: Default::default(),
-            })),
-            rename_provider: Some(OneOf::Right(RenameOptions {
+            workspace_symbol_provider: Some(WorkspaceSymbolProvider::WorkspaceSymbolOptions(
+                WorkspaceSymbolOptions {
+                    resolve_provider: Some(false),
+                    ..Default::default()
+                },
+            )),
+            rename_provider: Some(RenameProvider::RenameOptions(RenameOptions {
                 prepare_provider: Some(true),
-                work_done_progress_options: Default::default(),
+                ..Default::default()
             })),
             completion_provider: Some(CompletionOptions {
                 resolve_provider: Some(true),

@@ -1,7 +1,6 @@
-use lsp_types::Uri;
+use gen_lsp_types::Uri;
 use std::borrow::Cow;
 use std::path::{Path, PathBuf};
-use std::str::FromStr;
 
 #[cfg(not(windows))]
 pub use std::fs::canonicalize as strict_canonicalize;
@@ -41,26 +40,31 @@ fn strict_canonicalize<P: AsRef<Path>>(path: P) -> std::io::Result<PathBuf> {
     impl_(canon)
 }
 
+/// Extract the path component from a URI string.
+/// For file URIs, removes the `file://` prefix.
+fn extract_path_from_uri(uri_str: &str) -> Option<&str> {
+    uri_str.strip_prefix("file://")
+}
+
 mod sealed {
     pub trait Sealed {}
 }
 
-/// Provide methods to [`lsp_types::Uri`] to fill blanks left by
-/// `fluent_uri` (the underlying type) especially when converting to and from file paths.
+/// Provide methods to [`gen_lsp_types::Uri`] for converting to and from file paths.
 pub trait UriExt: Sized + sealed::Sealed {
     /// Assuming the URL is in the `file` scheme or similar,
     /// convert its path to an absolute `std::path::Path`.
     ///
-    /// **Note:** This does not actually check the URL’s `scheme`, and may
-    /// give nonsensical results for other schemes. It is the user’s
-    /// responsibility to check the URL’s scheme before calling this.
+    /// **Note:** This does not actually check the URL's `scheme`, and may
+    /// give nonsensical results for other schemes. It's the user's
+    /// responsibility to check the URL's scheme before calling this.
     ///
     /// e.g. `Uri("file:///etc/passwd")` becomes `PathBuf("/etc/passwd")`
     fn to_file_path(&self) -> Option<Cow<'_, Path>>;
 
-    /// Convert a file path to a [`lsp_types::Uri`].
+    /// Convert a file path to a [`gen_lsp_types::Uri`].
     ///
-    /// Create a [`lsp_types::Uri`] from a file path.
+    /// Create a [`gen_lsp_types::Uri`] from a file path.
     ///
     /// Returns `None` if the file does not exist.
     fn from_file_path<A: AsRef<Path>>(path: A) -> Option<Self>;
@@ -89,35 +93,27 @@ pub trait UriExt: Sized + sealed::Sealed {
     }
 }
 
-impl sealed::Sealed for lsp_types::Uri {}
+impl sealed::Sealed for gen_lsp_types::Uri {}
 
-impl UriExt for lsp_types::Uri {
+impl UriExt for gen_lsp_types::Uri {
     fn to_file_path(&self) -> Option<Cow<'_, Path>> {
-        let path = match self.path().as_estr().decode().into_string_lossy() {
-            Cow::Borrowed(ref_) => Cow::Borrowed(Path::new(ref_)),
-            Cow::Owned(owned) => Cow::Owned(PathBuf::from(owned)),
-        };
+        let uri_str = self.as_ref();
+        let path_str = extract_path_from_uri(uri_str)?;
 
         if cfg!(windows) {
-            let authority = self.authority()?;
-            let host = authority.host().as_str();
-            if host.is_empty() {
-                // very high chance this is a `file:///` uri
-                // in which case the path will include a leading slash we need to remove
-                let host = path.to_string_lossy();
-                let host = &host[1..];
-                return Some(Cow::Owned(PathBuf::from(host)));
-            }
-
-            let host = format!("{host}:");
-            Some(Cow::Owned(
-                Path::new(&host)
-                    .components()
-                    .chain(path.components())
-                    .collect(),
-            ))
+            // On Windows, handle paths like /C:/path
+            let path_str = if path_str.starts_with("/")
+                && path_str.len() > 2
+                && path_str.chars().nth(2) == Some(':')
+            {
+                // /C:/path -> C:/path
+                &path_str[1..]
+            } else {
+                path_str
+            };
+            Some(Cow::Owned(PathBuf::from(path_str)))
         } else {
-            Some(path)
+            Some(Cow::Owned(PathBuf::from(path_str)))
         }
     }
 
@@ -141,7 +137,8 @@ impl UriExt for lsp_types::Uri {
             format!("file://{}", fragment.to_string_lossy())
         };
 
-        Uri::from_str(&raw_uri).ok()
+        // Uri is a type alias for fluent_uri::Uri<String> with the fluent-uri feature
+        Uri::parse(raw_uri).ok()
     }
 }
 
@@ -150,7 +147,7 @@ mod tests {
     #[cfg(windows)]
     use super::strict_canonicalize;
     use crate::uri::UriExt;
-    use lsp_types::Uri;
+    use gen_lsp_types::Uri;
     use std::path::Path;
 
     #[test]
@@ -174,20 +171,12 @@ mod tests {
     #[test]
     #[cfg(windows)]
     fn test_windows_uri_roundtrip_conversion() {
-        use std::str::FromStr;
-
-        let uri = Uri::from_str("file:///C:/Windows").unwrap();
+        let uri = Uri::parse("file:///C:/Windows").unwrap();
         let path = uri.to_file_path().unwrap();
         assert_eq!(&path, Path::new("C:/Windows"), "uri={uri:?}");
 
         let conv = Uri::from_file_path(&path).unwrap();
 
-        assert_eq!(
-            uri,
-            conv,
-            "path={path:?} left={} right={}",
-            uri.as_str(),
-            conv.as_str()
-        );
+        assert_eq!(uri, conv, "path={path:?}");
     }
 }
