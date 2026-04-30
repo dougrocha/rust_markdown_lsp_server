@@ -4,7 +4,7 @@ use lsp_types::{GotoDefinitionParams, GotoDefinitionResponse, Location, Range};
 use miette::{Context, Result};
 
 use crate::{
-    get_document, handlers::link_resolver::resolve_target_uri, helpers::normalize_header_content,
+    get_document, handlers::link_resolver::resolve_target_uri, helpers::header_slug,
     server_state::ServerState,
 };
 
@@ -49,7 +49,7 @@ fn find_definition<'a>(
     };
 
     let target_content = header_text.strip_prefix('#').unwrap_or(header_text);
-    let normalized_target = normalize_header_content(target_content);
+    let normalized_target = header_slug(target_content);
 
     let reference = target_doc.references.iter().find(|reference| {
         let ReferenceKind::Header { content, .. } = &reference.kind else {
@@ -60,7 +60,7 @@ fn find_definition<'a>(
             return true;
         }
 
-        let normalized_content = normalize_header_content(content);
+        let normalized_content = header_slug(content);
 
         normalized_content == target_content || normalized_content == normalized_target
     });

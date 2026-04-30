@@ -7,9 +7,7 @@ use lib_core::{
 };
 use lsp_types::{Location, Uri};
 
-use crate::{
-    ServerState, handlers::link_resolver::resolve_target_uri, helpers::normalize_header_content,
-};
+use crate::{ServerState, handlers::link_resolver::resolve_target_uri, helpers::header_slug};
 
 /// Helper for collecting references to a specific item in the document
 pub(crate) struct ReferenceCollector<'a> {
@@ -207,5 +205,5 @@ impl<'a> ReferenceCollector<'a> {
 
 // This will normalize both headers before comparing
 pub(crate) fn normalized_headers_match(content1: &str, content2: &str) -> bool {
-    normalize_header_content(content1) == normalize_header_content(content2)
+    header_slug(content1) == header_slug(content2)
 }

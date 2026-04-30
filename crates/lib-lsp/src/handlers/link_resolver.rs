@@ -8,7 +8,7 @@ use lib_core::{
     vault::Vault,
 };
 
-use crate::{ServerState, config::LinkConfig};
+use crate::{ServerState, config::LinkConfig, helpers::slug::filename_slug};
 
 pub fn resolve_target_uri(lsp: &ServerState, document: &Document, target: &str) -> Result<Uri> {
     let active_root = lsp.get_workspace_root_for_uri(&document.uri);
@@ -91,10 +91,10 @@ fn resolve_as_path(
 fn resolve_by_filename(target: &str, documents: &Vault, _config: &LinkConfig) -> Option<Uri> {
     let target_stem = target.strip_suffix(".md").unwrap_or(target);
 
-    let normalized_target = normalize_for_matching(target_stem);
+    let normalized_target = filename_slug(target_stem);
     documents.iter().find_map(|doc| {
         let doc_filename = extract_filename_stem(&doc.uri)?;
-        let normalized_doc = normalize_for_matching(&doc_filename);
+        let normalized_doc = filename_slug(&doc_filename);
 
         if normalized_target == normalized_doc {
             Some(doc.uri.clone())
@@ -102,26 +102,6 @@ fn resolve_by_filename(target: &str, documents: &Vault, _config: &LinkConfig) ->
             None
         }
     })
-}
-
-/// Normalize string for matching (case-insensitive, unified separators)
-///
-/// Transformations:
-/// - Lowercase
-/// - Spaces, dashes, underscores -> all become dashes
-///
-/// Examples:
-/// - "My Note" -> "my-note"
-/// - "my_note" -> "my-note"
-/// - "MY-NOTE" -> "my-note"
-fn normalize_for_matching(s: &str) -> String {
-    s.to_lowercase()
-        .chars()
-        .map(|c| match c {
-            ' ' | '_' | '-' => '-',
-            c => c,
-        })
-        .collect()
 }
 
 #[cfg(test)]
@@ -136,14 +116,5 @@ mod tests {
         assert!(is_path_syntax("folder/file.md"));
         assert!(!is_path_syntax("note"));
         assert!(!is_path_syntax("my-note"));
-    }
-
-    #[test]
-    fn test_normalize_for_matching() {
-        assert_eq!(normalize_for_matching("My Note"), "my-note");
-        assert_eq!(normalize_for_matching("my_note"), "my-note");
-        assert_eq!(normalize_for_matching("MY-NOTE"), "my-note");
-        assert_eq!(normalize_for_matching("my note"), "my-note");
-        assert_eq!(normalize_for_matching("My_Cool_Note"), "my-cool-note");
     }
 }

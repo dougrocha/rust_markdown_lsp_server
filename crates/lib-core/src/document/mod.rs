@@ -1,4 +1,4 @@
-use std::{collections::HashMap, fmt::Debug, ops::Range};
+use std::{collections::HashMap, fmt::Debug};
 
 use lib_parser::{InlineMarkdownNode, LinkType, MarkdownNode, Parser, Spanned, markdown_parser};
 use lsp_types::{Diagnostic, DiagnosticSeverity, Position, Uri};
@@ -6,7 +6,7 @@ use miette::Result;
 use references::{Reference, ReferenceKind};
 use ropey::Rope;
 
-use crate::document::metadata::FrontmatterValue;
+use crate::{document::metadata::FrontmatterValue, text_buffer_conversions::TextBufferConversions};
 
 pub mod metadata;
 pub mod references;
@@ -55,12 +55,13 @@ impl Document {
         self.references.clear();
         self.diagnostics.clear();
 
-        let input = self.content.slice(..).to_string();
+        let doc_content_slice = self.content.slice(..);
+        let input = doc_content_slice.to_string();
 
         let (parsed_markdown, errors) = markdown_parser().parse(&input).into_output_errors();
         for err in errors {
             self.diagnostics.push(Diagnostic {
-                range: self.byte_to_lsp_range(&err.span().into_range()),
+                range: doc_content_slice.byte_to_lsp_range(&err.span().into_range()),
                 severity: Some(DiagnosticSeverity::WARNING),
                 code: None,
                 code_description: None,
@@ -95,7 +96,7 @@ impl Document {
                             level,
                             content: content.to_string(),
                         },
-                        range: self.byte_to_lsp_range(&span.into_range()),
+                        range: doc_content_slice.byte_to_lsp_range(&span.into_range()),
                     };
                     self.references.push(reference);
                 }
@@ -113,7 +114,8 @@ impl Document {
                                             title: None,
                                             header: header.map(|x| x.to_string()),
                                         },
-                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                        range: doc_content_slice
+                                            .byte_to_lsp_range(&inline_span.into_range()),
                                     };
                                     self.references.push(reference);
                                 }
@@ -128,7 +130,8 @@ impl Document {
                                             alias: display_text.map(|d| d.to_string()),
                                             header: header.map(|x| x.to_string()),
                                         },
-                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                        range: doc_content_slice
+                                            .byte_to_lsp_range(&inline_span.into_range()),
                                     };
                                     self.references.push(reference);
                                 }
@@ -141,10 +144,10 @@ impl Document {
                 }
                 MarkdownNode::ListItem {
                     checkbox: _,
-                    content,
+                    content: list_content,
                 } => {
                     // Process links inside list item content (same as paragraph)
-                    for inline in content {
+                    for inline in list_content {
                         let Spanned(inline_markdown, inline_span) = inline;
 
                         if let InlineMarkdownNode::Link(link) = inline_markdown {
@@ -157,7 +160,8 @@ impl Document {
                                             title: None,
                                             header: header.map(|x| x.to_string()),
                                         },
-                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                        range: doc_content_slice
+                                            .byte_to_lsp_range(&inline_span.into_range()),
                                     };
                                     self.references.push(reference);
                                 }
@@ -172,7 +176,8 @@ impl Document {
                                             alias: display_text.map(|d| d.to_string()),
                                             header: header.map(|x| x.to_string()),
                                         },
-                                        range: self.byte_to_lsp_range(&inline_span.into_range()),
+                                        range: doc_content_slice
+                                            .byte_to_lsp_range(&inline_span.into_range()),
                                     };
                                     self.references.push(reference);
                                 }
@@ -188,30 +193,5 @@ impl Document {
         });
 
         Ok(())
-    }
-
-    pub fn byte_to_lsp_range(&self, span: &Range<usize>) -> lsp_types::Range {
-        let start_line = self.content.byte_to_line(span.start);
-        let end_line = self.content.byte_to_line(span.end);
-
-        let line_start_char_idx = self.content.line_to_char(start_line);
-        let line_end_char_idx = self.content.line_to_char(end_line);
-
-        let start_char = self.content.byte_to_char(span.start) - line_start_char_idx;
-        let end_char = self.content.byte_to_char(span.end) - line_end_char_idx;
-
-        lsp_types::Range::new(
-            Position::new(start_line as u32, start_char as u32),
-            Position::new(end_line as u32, end_char as u32),
-        )
-    }
-
-    pub fn lsp_range_to_byte(&self, range: &lsp_types::Range) -> Range<usize> {
-        let start_byte =
-            self.content.line_to_byte(range.start.line as usize) + range.start.character as usize;
-        let end_byte =
-            self.content.line_to_byte(range.end.line as usize) + range.end.character as usize;
-
-        start_byte..end_byte
     }
 }

@@ -47,7 +47,7 @@ impl TestWorkspace {
             .changes
             .unwrap_or_default()
             .into_iter()
-            .map(|(uri, text_edits)| (uri.to_string(), text_edits))
+            .map(|(uri, text_edits)| (uri.path().to_string(), text_edits))
             .collect()
     }
 }

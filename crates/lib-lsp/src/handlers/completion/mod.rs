@@ -12,7 +12,7 @@ use miette::{Context, Result, miette};
 use crate::{
     get_document,
     handlers::link_resolver,
-    helpers::{self, normalize_header_content},
+    helpers::{self, header_slug},
     server_state::ServerState,
 };
 
@@ -160,7 +160,7 @@ fn handle_invoked_completion(
     position: lsp_types::Position,
 ) -> Option<Vec<CompletionItem>> {
     let slice = document.content.slice(..);
-    let byte_pos = slice.lsp_position_to_byte(position);
+    let byte_pos = slice.position_to_byte_offset(position);
 
     let (anchor_idx, anchor_char) = find_byte_backwards_any(&slice, byte_pos, b"[(#:\n")?;
 
@@ -169,7 +169,7 @@ fn handle_invoked_completion(
     }
 
     let trigger_pos = anchor_idx + 1;
-    let trigger_lsp_pos = slice.byte_to_lsp_position(trigger_pos);
+    let trigger_lsp_pos = slice.byte_offset_to_position(trigger_pos);
 
     tracing::debug!(
         "Invoked: {:?}",
@@ -185,7 +185,7 @@ fn handle_trigger_completion(
     position: lsp_types::Position,
 ) -> Option<Vec<CompletionItem>> {
     let slice = document.content.slice(..);
-    let byte_pos = slice.lsp_position_to_byte(position);
+    let byte_pos = slice.position_to_byte_offset(position);
 
     let intent = CompletionIntent::from_position(document, byte_pos)?;
 
@@ -281,7 +281,7 @@ fn complete_headers(
     let ref_doc = lsp.documents.get_document(&file_uri)?;
     for doc_ref in &ref_doc.references {
         if let ReferenceKind::Header { level, content } = &doc_ref.kind {
-            let header_id = normalize_header_content(content);
+            let header_id = header_slug(content);
 
             let label = content.clone();
 
@@ -312,7 +312,7 @@ fn has_closing_chars(document: &Document, byte_pos: usize, link_type: LinkType) 
     let slice = document.content.slice(..);
 
     if document
-        .get_reference_at_position(slice.byte_to_lsp_position(byte_pos))
+        .get_reference_at_position(slice.byte_offset_to_position(byte_pos))
         .is_some()
     {
         return true;

@@ -1,5 +1,8 @@
 pub mod path;
 pub mod references;
+pub mod slug;
+
+pub use slug::header_slug;
 
 use lsp_types::{Position, Range, Uri};
 use miette::{Context, IntoDiagnostic, Result, miette};
@@ -21,24 +24,6 @@ use crate::{
     handlers::link_resolver::resolve_target_uri,
     server_state::ServerState,
 };
-
-/// Normalizes header content to match the format used in completions
-pub fn normalize_header_content(content: &str) -> String {
-    let mut result = String::with_capacity(content.len());
-    let mut last_was_dash = false;
-
-    for c in content.to_lowercase().chars() {
-        if c.is_alphanumeric() {
-            result.push(c);
-            last_was_dash = false;
-        } else if !last_was_dash {
-            result.push('-');
-            last_was_dash = true;
-        }
-    }
-
-    result.trim_matches('-').to_string()
-}
 
 /// Retrieves the content from a linked document based on the provided link data.
 pub fn get_content(
@@ -132,7 +117,7 @@ pub fn extract_header_section<'a>(
 
     // Optimization: Pre-calculate normalized target once
     let target_content = header.strip_prefix('#').unwrap_or(header);
-    let normalized_target = normalize_header_content(target_content);
+    let normalized_target = header_slug(target_content);
 
     for link in links {
         if let ReferenceKind::Header {
@@ -143,7 +128,7 @@ pub fn extract_header_section<'a>(
             // Logic: Find start
             if start_position.is_none() {
                 let matches_header = *header_content == target_content
-                    || normalize_header_content(header_content) == normalized_target;
+                    || header_slug(header_content) == normalized_target;
 
                 if matches_header {
                     start_position = Some(link.range.start);
@@ -167,8 +152,8 @@ pub fn extract_header_section<'a>(
         (Some(start), Some(end)) if start < end && (end.line as usize) <= content.len_lines() => {
             // Safety check: ensure positions are valid for this content
             if let (Some(start_byte), Some(end_byte)) = (
-                content.try_lsp_position_to_byte(start),
-                content.try_lsp_position_to_byte(end),
+                content.try_position_to_byte_offset(start),
+                content.try_position_to_byte_offset(end),
             ) {
                 (
                     Some(content.byte_slice(start_byte..end_byte)),
@@ -179,7 +164,7 @@ pub fn extract_header_section<'a>(
             }
         }
         (Some(start), None) if (start.line as usize) < content.len_lines() => {
-            if let Some(start_byte) = content.try_lsp_position_to_byte(start) {
+            if let Some(start_byte) = content.try_position_to_byte_offset(start) {
                 (
                     Some(content.byte_slice(start_byte..)),
                     Range::new(start, Position::new(content.len_lines() as u32, 0)),
@@ -197,42 +182,6 @@ mod tests {
     use std::str::FromStr;
 
     use super::*;
-
-    #[test]
-    fn test_normalize_header_content() {
-        assert_eq!(normalize_header_content("Example Header"), "example-header");
-        assert_eq!(
-            normalize_header_content("Example  Header"),
-            "example-header"
-        );
-        assert_eq!(normalize_header_content("Example-Header"), "example-header");
-        assert_eq!(normalize_header_content("Example_Header"), "example-header");
-        assert_eq!(
-            normalize_header_content("Example & Header"),
-            "example-header"
-        );
-        assert_eq!(
-            normalize_header_content("Example Header!"),
-            "example-header"
-        );
-    }
-
-    #[test]
-    fn test_header_matching_with_hash_prefix() {
-        let original_header = "Example Header";
-        let target_with_hash = "#example-header";
-        let target_without_hash = target_with_hash.strip_prefix('#').unwrap();
-
-        // Test the matching logic used in goto_definition
-        let matches = normalize_header_content(original_header) == target_without_hash
-            || normalize_header_content(original_header)
-                == normalize_header_content(target_without_hash);
-
-        assert!(
-            matches,
-            "Header matching should work with hash prefix stripped"
-        );
-    }
 
     #[test]
     fn test_extract_header_section_hierarchy() {
