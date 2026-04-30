@@ -9,15 +9,13 @@ use lib_core::{
         Document,
         references::{Reference, ReferenceKind},
     },
+    path::{find_relative_path, resolve_reference_target},
     uri::UriExt,
 };
 use lsp_types::{RenameFilesParams, TextEdit, Uri, WorkspaceEdit};
 use miette::{IntoDiagnostic, Result};
 
-use crate::{
-    ServerState,
-    helpers::path::{relative_path, resolve_reference_target},
-};
+use crate::ServerState;
 
 pub fn process_will_rename_files(
     lsp: &mut ServerState,
@@ -37,7 +35,7 @@ pub fn process_will_rename_files(
 
         // update references connected to the changed file
         for (doc, reference) in find_references_to_uri(lsp, &old_uri) {
-            let new_rel = relative_path(old_path, new_path)?;
+            let new_rel = find_relative_path(old_path, new_path)?;
             let new_ref = create_reference_with_new_uri(reference, new_rel);
 
             changes
@@ -54,7 +52,7 @@ pub fn process_will_rename_files(
                 .filter(|r| r.kind.is_link())
                 .filter_map(|reference| {
                     let resolved = resolve_reference_target(old_path, reference).ok()?;
-                    let new_rel = relative_path(new_path, resolved).ok()?;
+                    let new_rel = find_relative_path(new_path, resolved).ok()?;
                     let new_ref = create_reference_with_new_uri(reference, new_rel);
                     Some(TextEdit::new(reference.range, new_ref.to_file_text()))
                 })

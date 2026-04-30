@@ -1,65 +1,65 @@
 mod error;
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use error::PathError;
 use lsp_types::Uri;
-use miette::Result;
+use miette::{Result, miette};
+use path_clean::PathClean;
 
-use crate::uri::UriExt;
+use crate::{document::references::Reference, uri::UriExt};
 
-pub fn get_parent_path(uri: &Uri) -> Option<String> {
-    let path = Path::new(uri.path().as_str());
-    path.parent().map(|p| p.to_string_lossy().into_owned())
+/// Resolve a reference to its absolute filepath equivalent
+pub fn resolve_reference_target(
+    source_path: impl AsRef<Path>,
+    reference: &Reference,
+) -> Result<PathBuf> {
+    let target_str = reference.kind.get_target().ok_or(miette!("No target"))?;
+
+    Ok(combine_and_normalize(source_path, target_str)?)
 }
 
-pub fn combine_and_normalize(source: &Uri, target: &str) -> Result<Uri, PathError> {
-    let source_path = source
-        .to_file_path()
-        .ok_or_else(|| PathError::InvalidUri(source.to_string()))?;
+// TODO: Not sure if I really like this name
+pub fn combine_and_normalize(
+    source_path: impl AsRef<Path>,
+    target_path: &str,
+) -> Result<PathBuf, PathError> {
+    let source_path = source_path.as_ref();
 
-    let parent_path = source_path
+    let source_parent = source_path
         .parent()
         .ok_or_else(|| PathError::NoParent(source_path.to_path_buf()))?;
 
-    let combined_path = parent_path.join(target);
-
-    let path = combined_path.canonicalize().map_err(PathError::Io)?;
-
-    Uri::from_file_path(path).ok_or_else(|| PathError::InvalidUri(source.to_string()))
+    Ok(source_parent.join(target_path).clean())
 }
 
-pub fn find_relative_path(source: &Uri, target: &Uri) -> Result<String, PathError> {
-    let source_path = source
-        .to_file_path()
-        .ok_or_else(|| PathError::InvalidUri(source.to_string()))?;
+/// Computes the relative path between a source file and a target file.
+///
+/// Will compute the difference between the source file's directory versus the target file.
+pub fn find_relative_path(
+    source_path: impl AsRef<Path>,
+    target_path: impl AsRef<Path>,
+) -> Result<String, PathError> {
+    let from_file = source_path.as_ref();
+    let to_file = target_path.as_ref();
 
-    let target_path = target
-        .to_file_path()
-        .ok_or_else(|| PathError::InvalidUri(target.to_string()))?;
-
-    let base_dir = source_path
+    let from_parent = from_file
         .parent()
-        .ok_or_else(|| PathError::NoParent(source_path.to_path_buf()))?;
+        .ok_or_else(|| PathError::NoParent(from_file.to_path_buf()))?;
 
-    let relative_path_buf =
-        pathdiff::diff_paths(&target_path, base_dir).ok_or_else(|| PathError::RelativeDiff {
-            base: base_dir.to_path_buf(),
-            target: target_path.to_path_buf(),
-        })?;
+    let mut rel = pathdiff::diff_paths(to_file, from_parent)
+        .ok_or_else(|| PathError::RelativeDiff {
+            base: from_parent.to_path_buf(),
+            target: to_file.to_path_buf(),
+        })?
+        .to_string_lossy()
+        .to_string();
 
-    let relative_path_str = relative_path_buf.to_string_lossy();
-
-    // This heuristic adds "./" for direct children like "file.txt" or "subdir/file.txt"
-    // It avoids adding "./" for "../" paths or absolute paths if they somehow sneaked through
-    // (though diff_paths should produce relative paths).
-    if relative_path_str.is_empty() {
-        Ok("./".to_string())
-    } else if !relative_path_str.starts_with('.') && !relative_path_buf.is_absolute() {
-        Ok(format!("./{relative_path_str}"))
-    } else {
-        Ok(relative_path_str.into_owned())
+    if !rel.starts_with('.') {
+        rel = format!("./{}", rel);
     }
+
+    Ok(rel)
 }
 
 /// Extract filename without extension from URI
@@ -85,41 +85,37 @@ mod tests {
 
     #[test]
     fn test_find_relative_path_same_dir() {
-        let source = Uri::from_str("file:///project/notes/a.md").unwrap();
-        let target = Uri::from_str("file:///project/notes/b.md").unwrap();
+        let source = "file:///project/notes/a.md";
+        let target = "file:///project/notes/b.md";
 
-        let result = find_relative_path(&source, &target).unwrap();
-        // Should trigger the "./" heuristic
+        let result = find_relative_path(source, target).unwrap();
         assert_eq!(result, "./b.md");
     }
 
     #[test]
     fn test_find_relative_path_nested_child() {
-        let source = Uri::from_str("file:///project/notes/a.md").unwrap();
-        let target = Uri::from_str("file:///project/notes/subdir/c.md").unwrap();
+        let source = "file:///project/notes/a.md";
+        let target = "file:///project/notes/subdir/c.md";
 
-        let result = find_relative_path(&source, &target).unwrap();
-        // Should trigger the "./" heuristic for the folder
+        let result = find_relative_path(source, target).unwrap();
         assert_eq!(result, "./subdir/c.md");
     }
 
     #[test]
     fn test_find_relative_path_parent_dir() {
-        let source = Uri::from_str("file:///project/notes/subdir/a.md").unwrap();
-        let target = Uri::from_str("file:///project/notes/root.md").unwrap();
+        let source = "file:///project/notes/subdir/a.md";
+        let target = "file:///project/notes/root.md";
 
-        let result = find_relative_path(&source, &target).unwrap();
-        // Should NOT trigger "./" because it starts with ".."
+        let result = find_relative_path(source, target).unwrap();
         assert_eq!(result, "../root.md");
     }
 
     #[test]
     fn test_find_relative_path_exact_same_file() {
-        let source = Uri::from_str("file:///project/notes/a.md").unwrap();
-        let target = Uri::from_str("file:///project/notes/a.md").unwrap();
+        let source = "file:///project/notes/a.md";
+        let target = "file:///project/notes/a.md";
 
-        let result = find_relative_path(&source, &target).unwrap();
-        // Should handle the empty string case
+        let result = find_relative_path(source, target).unwrap();
         assert_eq!(result, "./a.md");
     }
 

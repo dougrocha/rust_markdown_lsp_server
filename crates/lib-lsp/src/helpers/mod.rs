@@ -1,11 +1,10 @@
-pub mod path;
 pub mod references;
 pub mod slug;
 
 pub use slug::header_slug;
 
 use lsp_types::{Position, Range, Uri};
-use miette::{Context, IntoDiagnostic, Result, miette};
+use miette::{Context, Result, miette};
 use ropey::RopeSlice;
 
 use lib_core::{
@@ -62,13 +61,19 @@ pub fn generate_link_text(
         // Always use stem (no .md extension) for filename-based links
         LinkGenerationStyle::Filename => Ok(extract_filename_stem(target_uri)
             .ok_or_else(|| miette!("Failed to extract filename stem from {:?}", target_uri))?),
-        LinkGenerationStyle::Relative => Ok(find_relative_path(source_uri, target_uri)?),
+        LinkGenerationStyle::Relative => Ok(find_relative_path(
+            source_uri.to_string(),
+            target_uri.to_string(),
+        )?),
         LinkGenerationStyle::Absolute => {
             if let Some(root) = workspace_root {
                 generate_absolute_path(root, target_uri)
             } else {
                 // Fallback to relative if no workspace root
-                Ok(find_relative_path(source_uri, target_uri).into_diagnostic()?)
+                Ok(find_relative_path(
+                    source_uri.to_string(),
+                    target_uri.to_string(),
+                )?)
             }
         }
     }
@@ -254,14 +259,11 @@ mod tests {
         let resolved_uri = result.unwrap();
         assert_eq!(resolved_uri.as_str(), "file:///workspace/AGENTS.md");
 
-        // Test relative path resolution (this will fail in test environment due to file system access)
-        // but we can verify the function signature works
+        // Test relative path resolution — resolves against the source document's directory.
+        // combine_and_normalize uses path_clean (no filesystem access) so this always succeeds.
         let result = resolve_target_uri(&server, &document, "./relative.md");
-        // We expect this to fail in test environment, but the function should be callable
-        assert!(
-            result.is_err(),
-            "Relative path resolution may fail in test environment"
-        );
+        assert!(result.is_ok(), "Should resolve relative path without hitting disk");
+        assert_eq!(result.unwrap().as_str(), "file:///workspace/docs/relative.md");
     }
 
     #[test]

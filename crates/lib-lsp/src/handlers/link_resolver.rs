@@ -1,5 +1,5 @@
 use lsp_types::Uri;
-use miette::{Context, Result, miette};
+use miette::{Result, miette};
 
 use lib_core::{
     document::Document,
@@ -9,6 +9,14 @@ use lib_core::{
 };
 
 use crate::{ServerState, config::LinkConfig, helpers::slug::filename_slug};
+
+// TODO: Rethinl this whole flow here
+// I need to try to make this non lsp specific so remove server state and just make it
+// file name/str/path dependant
+//
+// In this case it should only use the Documenets and/or the new Vault system.
+//
+// After everthing, move this all to lsp-core
 
 pub fn resolve_target_uri(lsp: &ServerState, document: &Document, target: &str) -> Result<Uri> {
     let active_root = lsp.get_workspace_root_for_uri(&document.uri);
@@ -75,11 +83,16 @@ fn resolve_as_path(
         Uri::from_file_path(target_path)
             .ok_or_else(|| miette!("Failed to create URI from absolute path: {}", target))
     } else {
-        combine_and_normalize(&source_doc.uri, target).context(format!(
-            "Failed to resolve relative path '{}' from '{}'",
-            target,
-            source_doc.uri.as_str()
-        ))
+        let source_doc_path = source_doc
+            .uri
+            .to_file_path()
+            .ok_or_else(|| miette!("Could not turn uri to file path!"))?;
+
+        let resolved =
+            combine_and_normalize(source_doc_path, target).map_err(|e| miette!("{e}"))?;
+
+        Uri::from_file_path(resolved)
+            .ok_or_else(|| miette!("Failed to create URI from resolved path: {}", target))
     }
 }
 

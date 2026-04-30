@@ -316,6 +316,7 @@ dependencies = [
  "lib-parser",
  "lsp-types",
  "miette",
+ "path-clean",
  "pathdiff",
  "ropey",
  "thiserror",

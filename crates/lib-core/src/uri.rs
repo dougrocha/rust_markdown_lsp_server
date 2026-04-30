@@ -80,6 +80,13 @@ pub trait UriExt: Sized + sealed::Sealed {
                 .map(|os_str| os_str.to_string_lossy().into_owned())
         })
     }
+
+    /// Get the parent directory as a new Uri
+    fn parent(&self) -> Option<Uri> {
+        self.to_file_path()
+            .and_then(|path| path.parent().map(|p| p.to_path_buf()))
+            .and_then(Uri::from_file_path)
+    }
 }
 
 impl sealed::Sealed for lsp_types::Uri {}
@@ -140,6 +147,7 @@ impl UriExt for lsp_types::Uri {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(windows)]
     use super::strict_canonicalize;
     use crate::uri::UriExt;
     use lsp_types::Uri;
@@ -155,10 +163,12 @@ mod tests {
 
     #[test]
     fn test_path_roundtrip_conversion() {
-        let src = strict_canonicalize(Path::new(".")).unwrap();
-        let conv = Uri::from_file_path(&src).unwrap();
+        // Use a hardcoded absolute path — no filesystem access needed.
+        // Uri::from_file_path skips canonicalize for absolute paths.
+        let src = Path::new("/some/absolute/path/note.md");
+        let conv = Uri::from_file_path(src).unwrap();
         let roundtrip = conv.to_file_path().unwrap();
-        assert_eq!(src, roundtrip, "conv={conv:?}",);
+        assert_eq!(src, roundtrip, "conv={conv:?}");
     }
 
     #[test]

@@ -1,4 +1,4 @@
-use lib_core::{document::references::ReferenceKind, path::get_parent_path, uri::UriExt};
+use lib_core::{document::references::ReferenceKind, uri::UriExt};
 
 use lsp_types::{
     CodeAction, CodeActionKind, CodeActionOrCommand, CodeActionParams, CodeActionResponse,
@@ -46,7 +46,13 @@ fn handle_non_range(
         return Ok(Some(vec![]));
     };
 
-    let parent_file_uri = get_parent_path(uri).unwrap();
+    let parent_uri = uri
+        .parent()
+        .context("Could not determine parent directory")?;
+
+    let parent_path = parent_uri
+        .to_file_path()
+        .context("Parent URI should be valid path here")?;
 
     let mut actions: Vec<CodeActionOrCommand> = Vec::new();
     match &reference.kind {
@@ -55,17 +61,18 @@ fn handle_non_range(
                 extract_header_section(content, &document.references, slice);
             let delta = 1i32 - *level as i32;
 
-            // TODO make file name be default to normalized header
-            let new_file_uri = Uri::from_file_path(format!(
-                "{}/{}.md",
-                parent_file_uri,
+            let new_filename = format!(
+                "{}.md",
                 (std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
                     .unwrap()
                     .as_secs()
                     % 1000000) as u32
-            ))
-            .context("New document should be valid path")?;
+            );
+
+            let new_file_path = parent_path.join(new_filename);
+            let new_file_uri = Uri::from_file_path(new_file_path)
+                .context("new document should be a valid path")?;
 
             if let Some(header_content) = header_content {
                 let document_changes = DocumentChanges::Operations(vec![
