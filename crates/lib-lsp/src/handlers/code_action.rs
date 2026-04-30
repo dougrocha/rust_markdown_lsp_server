@@ -145,6 +145,9 @@ fn handle_non_range(
                         target_doc_content,
                     ))],
                 }),
+                // TODO: This is okay if our link does not include a header,
+                // if the link is link#header and header is a small section of the file
+                // you see what i mean?
                 DocumentChangeOperation::Op(ResourceOp::Delete(DeleteFile {
                     uri: target_uri,
                     options: Some(DeleteFileOptions {
