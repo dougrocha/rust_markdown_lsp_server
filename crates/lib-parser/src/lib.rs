@@ -6,6 +6,7 @@ use yaml::{Frontmatter, yaml_parser};
 pub use chumsky::Parser;
 
 pub mod markdown;
+pub mod new_markdown;
 pub mod yaml;
 
 #[derive(Debug, Clone, PartialEq)]
