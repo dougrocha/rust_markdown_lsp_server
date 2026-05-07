@@ -13,7 +13,7 @@ impl Span {
         self.end - self.start
     }
 
-    pub fn as_str<'src>(&self, src: &'src str) -> &'src str {
+    pub fn as_str<'a>(&self, src: &'a str) -> &'a str {
         &src[self.start..self.end]
     }
 
@@ -26,7 +26,6 @@ impl Span {
 enum BlockKind {
     Heading { level: u8, children: Vec<Inline> },
     Paragraph { children: Vec<Inline> },
-    Error,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -66,6 +65,9 @@ pub struct Document {
 struct Cursor<'src> {
     src: &'src str,
     pos: usize,
+
+    /// Offset if using recursive cursor, this offset is the byte offset from the original source.
+    offset: usize,
 }
 
 impl<'src> Cursor<'src> {
@@ -73,6 +75,15 @@ impl<'src> Cursor<'src> {
         Self {
             src: source,
             pos: 0,
+            offset: 0,
+        }
+    }
+
+    fn with_offset(source: &'src str, offset: usize) -> Self {
+        Self {
+            src: source,
+            pos: 0,
+            offset,
         }
     }
 
@@ -84,13 +95,22 @@ impl<'src> Cursor<'src> {
         self.pos >= self.src.len()
     }
 
+    /// Gets the current byte position in original source
+    fn abs_pos(&self) -> usize {
+        self.pos + self.offset
+    }
+
     fn next(&mut self) -> Option<char> {
         let c = self.peek()?;
         self.pos += c.len_utf8();
         Some(c)
     }
 
-    fn consume<F>(&mut self, f: F) -> bool
+    fn consume_span(&mut self, span: Span) {
+        self.pos += span.len();
+    }
+
+    fn consume_if<F>(&mut self, f: F) -> bool
     where
         F: Fn(char) -> bool,
     {
@@ -106,11 +126,21 @@ impl<'src> Cursor<'src> {
     where
         F: Fn(char) -> bool,
     {
-        let start = self.pos;
+        let start = self.abs_pos();
         while self.peek().is_some_and(&f) {
             self.next();
         }
-        Span::new(start, self.pos)
+        Span::new(start, self.abs_pos())
+    }
+
+    fn starts_with(&self, pat: &str) -> bool {
+        self.src[self.pos..].starts_with(pat)
+    }
+
+    /// Returns the absolute position of the first occurrence of `c`
+    /// at or after the current position, or `None` if not found.
+    fn find(&self, c: char) -> Option<usize> {
+        self.src[self.pos..].find(c).map(|i| self.abs_pos() + i)
     }
 }
 
@@ -129,7 +159,7 @@ impl<'src> Parser<'src> {
         let mut blocks = Vec::new();
 
         while !self.cursor.is_eof() {
-            if self.cursor.consume(|c| c == '\n') {
+            if self.cursor.consume_if(|c| c == '\n') {
                 continue;
             }
 
@@ -143,7 +173,7 @@ impl<'src> Parser<'src> {
         match self.cursor.peek() {
             Some('#') => self.parse_heading(),
             Some(_) => self.parse_paragraph(),
-            None => unreachable!("eof?"),
+            None => panic!("We should never panic here because we handle eof elsewhere"),
         }
     }
 
@@ -161,12 +191,13 @@ impl<'src> Parser<'src> {
             self.cursor.pos,
             self.cursor.consume_while(|c| c != '\n').end,
         );
+
         let kind = BlockKind::Heading {
-            level: level as u8,
+            level: level.min(6) as u8,
             children: self.parse_inline(inline_span),
         };
 
-        self.cursor.consume(|c| c == '\n');
+        self.cursor.consume_if(|c| c == '\n');
 
         Block {
             kind,
@@ -185,7 +216,7 @@ impl<'src> Parser<'src> {
             if self.cursor.is_eof() {
                 break;
             }
-            self.cursor.consume(|c| c == '\n');
+            self.cursor.consume_if(|c| c == '\n');
 
             let next = self.cursor.peek();
 
@@ -193,7 +224,7 @@ impl<'src> Parser<'src> {
                 None | Some('\n') => {
                     break;
                 }
-                Some(_) if self.is_heading(&self.cursor.src[self.cursor.pos..]) => {
+                Some(_) if Self::is_heading(&self.cursor.src[self.cursor.pos..]) => {
                     break;
                 }
                 Some(_) => {
@@ -212,101 +243,219 @@ impl<'src> Parser<'src> {
     }
 
     fn parse_inline(&self, span: Span) -> Vec<Inline> {
+        let src_slice = span.as_str(self.cursor.src);
+        let mut local_cursor = Cursor::with_offset(src_slice, span.start);
+
         let mut inlines = vec![];
 
-        let mut cur_pos = span.start;
+        let mut text_start = None;
 
-        while cur_pos < span.end {
-            let remaining = &self.cursor.src[cur_pos..span.end];
+        while !local_cursor.is_eof() {
+            let abs = local_cursor.abs_pos();
 
-            if let Some(inner) = remaining.strip_prefix("[[") {
-                let pipe_pos = inner.find('|');
-                let close_pos = inner.find("]]");
+            let inline_element = if local_cursor.starts_with("[[") {
+                let local_line_end = local_cursor.find('\n').unwrap_or(span.end);
 
-                if let Some(close_offset) = close_pos {
-                    // check if alias is possible first and make sure pipe comes before close
-                    let (target_end, children, total_len) = match pipe_pos {
-                        Some(p) if p < close_offset => {
-                            // [[target|alias]]
-                            let alias_span =
-                                Span::new(cur_pos + 2 + p + 1, cur_pos + 2 + close_offset);
-                            let kids = self.parse_inline(alias_span);
+                Self::try_parse_wikilink(&self.cursor.src[..local_line_end], abs).map(
+                    |(target_span, alias_span, total_span)| {
+                        let children = alias_span.map(|s| self.parse_inline(s));
+                        (
+                            InlineKind::Wikilink {
+                                target_span,
+                                children,
+                            },
+                            total_span,
+                        )
+                    },
+                )
+            } else if local_cursor.starts_with("[") {
+                Self::try_parse_link(&self.cursor.src[..span.end], abs).map(
+                    |(children_span, url_span, total_span)| {
+                        (
+                            InlineKind::Link {
+                                children: self.parse_inline(children_span),
+                                url_span,
+                            },
+                            total_span,
+                        )
+                    },
+                )
+            } else if local_cursor.starts_with("**") {
+                Self::try_parse_bold_text(&self.cursor.src[..span.end], abs).map(
+                    |(children_span, total_span)| {
+                        (
+                            InlineKind::Bold {
+                                children: self.parse_inline(children_span),
+                            },
+                            total_span,
+                        )
+                    },
+                )
+            } else {
+                None
+            };
 
-                            (cur_pos + 2 + p, Some(kids), 2 + close_offset + 2)
-                        }
-                        _ => {
-                            // [[target]]
-                            (cur_pos + 2 + close_offset, None, 2 + close_offset + 2)
-                        }
-                    };
-
-                    let target_span = Span::new(cur_pos + 2, target_end);
-
+            if let Some((kind, total_span)) = inline_element {
+                if let Some(start) = text_start.take() {
                     inlines.push(Inline {
-                        kind: InlineKind::Wikilink {
-                            target_span,
-                            children,
-                        },
-                        span: Span::new(cur_pos, cur_pos + total_len),
+                        kind: InlineKind::Text,
+                        span: Span::new(start, abs),
                     });
-
-                    cur_pos += total_len;
-                    continue;
                 }
-            }
-
-            if remaining.starts_with("[")
-                && let Some(mid_offset) = remaining.find("](")
-            {
-                let url_start_offset = mid_offset + 2;
-                let remaining_after_mid = &remaining[url_start_offset..];
-
-                if let Some(url_end_offset) = remaining_after_mid.find(")") {
-                    let end_offset = url_start_offset + url_end_offset;
-                    let total_len = end_offset + 1;
-
-                    let children_span = Span::new(cur_pos + 1, cur_pos + mid_offset);
-                    let url_span = Span::new(cur_pos + url_start_offset, cur_pos + end_offset);
-
-                    inlines.push(Inline {
-                        kind: InlineKind::Link {
-                            children: self.parse_inline(children_span),
-                            url_span,
-                        },
-                        span: Span::new(cur_pos, cur_pos + total_len),
-                    });
-
-                    cur_pos += total_len;
-                    continue;
+                inlines.push(Inline {
+                    kind,
+                    span: total_span,
+                });
+                local_cursor.consume_span(total_span);
+            } else {
+                if text_start.is_none() {
+                    text_start = Some(abs);
                 }
+                local_cursor.next();
             }
+        }
 
-            let mut text_len = 0;
-            let mut chars = remaining.chars();
-
-            if let Some(first_char) = chars.next() {
-                text_len += first_char.len_utf8();
-            }
-
-            for c in chars {
-                if c == '[' {
-                    break;
-                }
-                text_len += c.len_utf8();
-            }
-
+        if let Some(start) = text_start.take() {
             inlines.push(Inline {
                 kind: InlineKind::Text,
-                span: Span::new(cur_pos, cur_pos + text_len),
+                span: Span::new(start, local_cursor.abs_pos()),
             });
-
-            cur_pos += text_len;
         }
 
         inlines
     }
 
-    fn is_heading(&self, src: &str) -> bool {
+    /// Tries to get a Spans for a wikilink.
+    ///
+    /// # Arguments
+    ///
+    /// * `src` - A string slice for where to search.
+    /// * `pos` - Starting position to parse from.
+    ///
+    /// # Returns
+    ///
+    /// Return an [`Option`] containing these items,
+    /// or [`None`] if wikilink is not found
+    /// * `target_span`
+    /// * `alias_span`
+    /// * `total_span`
+    /// * `new_pos`
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let input = "[[Page Title|Display Text]]";
+    /// let (target, alias, total, new_pos) = Parser::try_parse_wikilink(input, 0).unwrap();
+    /// assert_eq!(target.as_str(input), "Page Title");
+    /// assert_eq!(alias.map(|s| s.as_str(input)), Some("Display Text"));
+    /// assert_eq!(new_pos, 27);
+    /// ```
+    fn try_parse_wikilink(src: &str, pos: usize) -> Option<(Span, Option<Span>, Span)> {
+        let search_start = pos + 2;
+        let rest = &src[search_start..];
+
+        let close_offset = rest.find("]]")?;
+        let close_abs = search_start + close_offset;
+
+        let content = &src[search_start..close_abs];
+
+        if content.contains("[[") {
+            return None;
+        }
+
+        let pipe_offset = content.find('|');
+
+        let (target_end, alias_span, total_len) = match pipe_offset {
+            Some(p) => {
+                let alias_start = search_start + p + 1;
+                let alias_span = Span::new(alias_start, close_abs);
+                (search_start + p, Some(alias_span), close_abs + 2 - pos)
+            }
+            None => (close_abs, None, close_abs + 2 - pos),
+        };
+
+        let target_span = Span::new(search_start, target_end);
+        let total_span = Span::new(pos, pos + total_len);
+
+        Some((target_span, alias_span, total_span))
+    }
+
+    /// Try to extract a link.
+    ///
+    /// # Arguments
+    ///
+    /// * `src` - A string slice for where to search.
+    /// * `pos` - Starting position to parse from.
+    ///
+    /// # Returns
+    ///
+    /// `Some((children_span, url_span, total_span, new_pos))` when a link is
+    /// found, where:
+    ///
+    /// * `children_span` – Span covering the link text between `[` and `]`.
+    /// * `url_span` – Span covering the URL between `(` and `)`.
+    /// * `total_span` – Span covering the entire `[text](url)` construct.
+    /// * `new_pos` – Byte offset immediately after the closing `)`.
+    ///
+    /// `None` if a link is not possible.
+    ///
+    /// # Examples
+    ///
+    /// ```ignore
+    /// let input = "[Google](https://google.com)";
+    /// let (children, url, total, new_pos) = Parser::try_parse_link(input, 0).unwrap();
+    /// assert_eq!(children.as_str(input), "Google");
+    /// assert_eq!(url.as_str(input), "https://google.com");
+    /// assert_eq!(new_pos, 28);
+    /// ```
+    fn try_parse_link(src: &str, pos: usize) -> Option<(Span, Span, Span)> {
+        let search_start = pos + 1;
+        let remaining = &src[search_start..];
+
+        let mid_offset = remaining.find("](")?;
+
+        let children_text = &src[search_start..search_start + mid_offset];
+        if children_text.contains('[') {
+            return None;
+        }
+
+        let url_start_abs = search_start + mid_offset + 2;
+
+        let url_remaining = &src[url_start_abs..];
+        let url_end_offset = url_remaining.find(')')?;
+        let url_end_abs = url_start_abs + url_end_offset;
+        let total_end = url_end_abs + 1;
+
+        let url_text = &src[url_start_abs..url_end_abs];
+        if url_text.contains('[') {
+            return None;
+        }
+
+        let children_span = Span::new(search_start, search_start + mid_offset);
+        let url_span = Span::new(url_start_abs, url_end_abs);
+        let total_span = Span::new(pos, total_end);
+
+        Some((children_span, url_span, total_span))
+    }
+
+    fn try_parse_bold_text(src: &str, pos: usize) -> Option<(Span, Span)> {
+        if !src[pos..].starts_with("**") {
+            return None;
+        }
+
+        let start_pos = pos + 2;
+        let remaining = &src[start_pos..];
+
+        let bold_end_offset = remaining.find("**")?;
+        let end = start_pos + bold_end_offset + 2;
+
+        Some((
+            Span::new(start_pos, start_pos + bold_end_offset),
+            Span::new(pos, end),
+        ))
+    }
+
+    fn is_heading(src: &str) -> bool {
         let trimmed = src.trim_start_matches('#');
         !trimmed.is_empty() && trimmed.starts_with(' ')
     }
@@ -436,6 +585,47 @@ mod tests {
     }
 
     #[test]
+    fn try_parse_link_basic() {
+        let input = "[Google Search](https://google.com)";
+        let result = Parser::try_parse_link(input, 0);
+
+        assert_eq!(
+            result,
+            Some((Span::new(1, 14), Span::new(16, 34), Span::new(0, 35)))
+        );
+    }
+
+    #[test]
+    fn try_parse_link_mid_string() {
+        let input = "text [link](url) more";
+        let result = Parser::try_parse_link(input, 5);
+
+        assert_eq!(
+            result,
+            Some((Span::new(6, 10), Span::new(12, 15), Span::new(5, 16)))
+        );
+    }
+
+    #[test]
+    fn try_parse_wikilink_basic() {
+        let input = "[[../other_file.rs]]";
+        let result = Parser::try_parse_wikilink(input, 0);
+
+        assert_eq!(result, Some((Span::new(2, 18), None, Span::new(0, 20))));
+    }
+
+    #[test]
+    fn try_parse_wikilink_with_alias() {
+        let input = "[[../other_file.rs|Other File]]";
+        let result = Parser::try_parse_wikilink(input, 0);
+
+        assert_eq!(
+            result,
+            Some((Span::new(2, 18), Some(Span::new(19, 29)), Span::new(0, 31)))
+        );
+    }
+
+    #[test]
     fn parse_link() {
         let input = "[Google Searh](https://google.com)";
         let result = Parser::new(input).parse();
@@ -485,6 +675,148 @@ mod tests {
     }
 
     #[test]
+    fn parse_broken_wikilink() {
+        let input = "[[../other_file";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                span: Span::new(0, 15),
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        span: Span::new(0, 15),
+                        kind: InlineKind::Text,
+                    }],
+                },
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_nested_broken_wikilink() {
+        let input = "[[broken link [[fixed link]]";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                span: Span::new(0, 28),
+                kind: BlockKind::Paragraph {
+                    children: vec![
+                        Inline {
+                            span: Span::new(0, 14),
+                            kind: InlineKind::Text,
+                        },
+                        Inline {
+                            span: Span::new(14, 28),
+                            kind: InlineKind::Wikilink {
+                                target_span: Span::new(16, 26),
+                                children: None,
+                            },
+                        },
+                    ],
+                },
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_broken_wikilink_with_link_syntax() {
+        let input = "[[]()";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                span: Span::new(0, 5),
+                kind: BlockKind::Paragraph {
+                    children: vec![
+                        Inline {
+                            span: Span::new(0, 1),
+                            kind: InlineKind::Text,
+                        },
+                        Inline {
+                            span: Span::new(1, 5),
+                            kind: InlineKind::Link {
+                                children: vec![],
+                                url_span: Span::new(4, 4),
+                            },
+                        },
+                    ],
+                },
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_broken_link_then_valid_link() {
+        let input = "[x [a](b)";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                span: Span::new(0, 9),
+                kind: BlockKind::Paragraph {
+                    children: vec![
+                        Inline {
+                            span: Span::new(0, 3),
+                            kind: InlineKind::Text,
+                        },
+                        Inline {
+                            span: Span::new(3, 9),
+                            kind: InlineKind::Link {
+                                children: vec![Inline {
+                                    kind: InlineKind::Text,
+                                    span: Span::new(4, 5),
+                                }],
+                                url_span: Span::new(7, 8),
+                            },
+                        },
+                    ],
+                },
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_broken_link_with_url_bracket() {
+        let input = "[x](fake [a](b)";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                span: Span::new(0, 15),
+                kind: BlockKind::Paragraph {
+                    children: vec![
+                        Inline {
+                            span: Span::new(0, 9),
+                            kind: InlineKind::Text,
+                        },
+                        Inline {
+                            span: Span::new(9, 15),
+                            kind: InlineKind::Link {
+                                children: vec![Inline {
+                                    kind: InlineKind::Text,
+                                    span: Span::new(10, 11),
+                                }],
+                                url_span: Span::new(13, 14),
+                            },
+                        },
+                    ],
+                },
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
     fn parse_wikilink_with_children() {
         let input = "[[../other_file.rs|Other File]]";
         let result = Parser::new(input).parse();
@@ -505,5 +837,71 @@ mod tests {
         } else {
             panic!("Expected Paragraph");
         }
+    }
+
+    #[test]
+    fn parse_bold_text() {
+        let input = "**Bold Text**";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                span: Span::new(0, 13),
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        span: Span::new(0, 13),
+                        kind: InlineKind::Bold {
+                            children: vec![Inline {
+                                kind: InlineKind::Text,
+                                span: Span::new(2, 11),
+                            }],
+                        },
+                    }],
+                },
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_bold_with_children() {
+        let input = "**bold [link](http://example.com) text**";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                span: Span::new(0, 40),
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        span: Span::new(0, 40),
+                        kind: InlineKind::Bold {
+                            children: vec![
+                                Inline {
+                                    kind: InlineKind::Text,
+                                    span: Span::new(2, 7),
+                                },
+                                Inline {
+                                    kind: InlineKind::Link {
+                                        children: vec![Inline {
+                                            kind: InlineKind::Text,
+                                            span: Span::new(8, 12),
+                                        }],
+                                        url_span: Span::new(14, 32),
+                                    },
+                                    span: Span::new(7, 33),
+                                },
+                                Inline {
+                                    kind: InlineKind::Text,
+                                    span: Span::new(33, 38),
+                                },
+                            ],
+                        },
+                    }],
+                },
+            }],
+        };
+
+        assert_eq!(result, expected);
     }
 }
