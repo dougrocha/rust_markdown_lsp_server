@@ -23,9 +23,24 @@ impl Span {
 }
 
 #[derive(Debug, Clone, PartialEq)]
+enum ListType {
+    Unordered,
+    Ordered,
+}
+
+#[derive(Debug, Clone, PartialEq)]
 enum BlockKind {
-    Heading { level: u8, children: Vec<Inline> },
-    Paragraph { children: Vec<Inline> },
+    Heading {
+        level: u8,
+        children: Vec<Inline>,
+    },
+    Paragraph {
+        children: Vec<Inline>,
+    },
+    List {
+        kind: ListType,
+        children: Vec<Block>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -38,6 +53,15 @@ struct Block {
 enum InlineKind {
     Text,
     Bold {
+        children: Vec<Inline>,
+    },
+    Italic {
+        children: Vec<Inline>,
+    },
+    BoldItalic {
+        children: Vec<Inline>,
+    },
+    Strikethrough {
         children: Vec<Inline>,
     },
     Link {
@@ -99,6 +123,7 @@ impl<'src> Cursor<'src> {
     }
 
     /// Gets the current byte position in original source
+    #[inline]
     fn abs_pos(&self) -> usize {
         self.pos + self.offset
     }
@@ -107,6 +132,23 @@ impl<'src> Cursor<'src> {
         let c = self.peek()?;
         self.pos += c.len_utf8();
         Some(c)
+    }
+
+    fn consume_escaped(&mut self) -> Option<Span> {
+        if !self.starts_with("\\") {
+            return None;
+        }
+
+        let next = self.src[self.pos + 1..].chars().next()?;
+        if !next.is_ascii_punctuation() {
+            return None;
+        }
+        let start = self.abs_pos();
+
+        self.next(); // consume '\'
+        self.next(); // consume the escaped char
+
+        Some(Span::new(start, self.abs_pos()))
     }
 
     fn consume_span(&mut self, span: Span) {
@@ -183,20 +225,21 @@ impl<'src> Parser<'src> {
     fn parse_heading(&mut self) -> Block {
         let start = self.cursor.pos;
 
-        let level = self.cursor.consume_while(|c| c == '#').len();
-        let spaces = self.cursor.consume_while(|c| c == ' ').len();
-        if spaces == 0 {
+        let level_span = self.cursor.consume_while(|c| c == '#');
+        let spaces = self.cursor.consume_while(|c| c == ' ');
+
+        if spaces.is_empty() {
             self.cursor.pos = start;
             return self.parse_paragraph();
         }
 
         let inline_span = Span::new(
-            self.cursor.pos,
+            self.cursor.abs_pos(),
             self.cursor.consume_while(|c| c != '\n').end,
         );
 
         let kind = BlockKind::Heading {
-            level: level.min(6) as u8,
+            level: (level_span.len() as u8).min(6),
             children: self.parse_inline(inline_span),
         };
 
@@ -224,15 +267,11 @@ impl<'src> Parser<'src> {
             let next = self.cursor.peek();
 
             match next {
-                None | Some('\n') => {
-                    break;
-                }
-                Some(_) if is_heading(&self.cursor.src[self.cursor.pos..]) => {
-                    break;
-                }
-                Some(_) => {
-                    // continuation line — keep accumulating
-                }
+                None | Some('\n') => break,
+                Some(_) if is_heading(&self.cursor.src[self.cursor.pos..]) => break,
+
+                // continuation line — keep accumulating
+                Some(_) => continue,
             }
         }
 
@@ -249,69 +288,24 @@ impl<'src> Parser<'src> {
         let src_slice = span.as_str(self.cursor.src);
         let mut local_cursor = Cursor::with_offset(src_slice, span.start);
 
-        let mut inlines = vec![];
+        let mut inlines = Vec::new();
 
-        let mut text_start = None;
+        // Start of the current loop of plain text
+        // If None = no text yet
+        let mut text_start: Option<usize> = None;
 
         while !local_cursor.is_eof() {
             let abs = local_cursor.abs_pos();
 
-            let inline_element = if local_cursor.starts_with("[[") {
-                let local_line_end = local_cursor.find('\n').unwrap_or(span.end);
+            // consume escaped characters as normal text
+            if local_cursor.consume_escaped().is_some() {
+                text_start.get_or_insert(abs);
+                continue;
+            }
 
-                Self::try_parse_wikilink(&self.cursor.src[..local_line_end], abs).map(
-                    |(target_span, alias_span, total_span)| {
-                        let children = alias_span.map(|s| self.parse_inline(s));
-                        (
-                            InlineKind::Wikilink {
-                                target_span,
-                                children,
-                            },
-                            total_span,
-                        )
-                    },
-                )
-            } else if local_cursor.starts_with("[^") {
-                let local_line_end = local_cursor.find('\n').unwrap_or(span.end);
+            let parsed_inline = self.try_inline_at(&mut local_cursor, span, abs);
 
-                Self::try_parse_footnote(&self.cursor.src[..local_line_end], abs).map(
-                    |(identifier_span, total_span)| {
-                        (
-                            InlineKind::Footnote {
-                                identifier: identifier_span,
-                            },
-                            total_span,
-                        )
-                    },
-                )
-            } else if local_cursor.starts_with("[") {
-                Self::try_parse_link(&self.cursor.src[..span.end], abs).map(
-                    |(children_span, url_span, total_span)| {
-                        (
-                            InlineKind::Link {
-                                children: self.parse_inline(children_span),
-                                url_span,
-                            },
-                            total_span,
-                        )
-                    },
-                )
-            } else if local_cursor.starts_with("**") {
-                Self::try_parse_bold_text(&self.cursor.src[..span.end], abs).map(
-                    |(children_span, total_span)| {
-                        (
-                            InlineKind::Bold {
-                                children: self.parse_inline(children_span),
-                            },
-                            total_span,
-                        )
-                    },
-                )
-            } else {
-                None
-            };
-
-            if let Some((kind, total_span)) = inline_element {
+            if let Some((kind, total_span)) = parsed_inline {
                 if let Some(start) = text_start.take() {
                     inlines.push(Inline {
                         kind: InlineKind::Text,
@@ -341,124 +335,203 @@ impl<'src> Parser<'src> {
         inlines
     }
 
+    fn try_inline_at(
+        &self,
+        cursor: &mut Cursor<'_>,
+        span: Span,
+        abs: usize,
+    ) -> Option<(InlineKind, Span)> {
+        let src = self.cursor.src;
+
+        if cursor.starts_with("[[") {
+            let line_end = cursor.find('\n').unwrap_or(span.end);
+            let (target_span, alias_span, total_span) =
+                Self::try_parse_wikilink(&src[..line_end], abs)?;
+            let children = alias_span.map(|s| self.parse_inline(s));
+
+            return Some((
+                InlineKind::Wikilink {
+                    target_span,
+                    children,
+                },
+                total_span,
+            ));
+        }
+
+        if cursor.starts_with("[^") {
+            let local_line_end = cursor.find('\n').unwrap_or(span.end);
+
+            let (identifier_span, total_span) =
+                Self::try_parse_footnote(&src[..local_line_end], abs)?;
+
+            return Some((
+                InlineKind::Footnote {
+                    identifier: identifier_span,
+                },
+                total_span,
+            ));
+        }
+
+        if cursor.starts_with("[") {
+            let (children_span, url_span, total_span) =
+                Self::try_parse_link(&src[..span.end], abs)?;
+
+            return Some((
+                InlineKind::Link {
+                    children: self.parse_inline(children_span),
+                    url_span,
+                },
+                total_span,
+            ));
+        }
+
+        if cursor.starts_with("[") {
+            let (children_span, url_span, total_span) =
+                Self::try_parse_link(&src[..span.end], abs)?;
+            let children = self.parse_inline(children_span);
+
+            return Some((InlineKind::Link { children, url_span }, total_span));
+        }
+
+        // Bold-italic must be checked before bold (longer prefix wins).
+        if cursor.starts_with("***") || cursor.starts_with("___") {
+            let (children_span, total_span) =
+                Self::try_parse_bold_italic_text(&src[..span.end], abs)?;
+            let children = self.parse_inline(children_span);
+
+            return Some((InlineKind::BoldItalic { children }, total_span));
+        }
+
+        if cursor.starts_with("**") || cursor.starts_with("__") {
+            let (children_span, total_span) = Self::try_parse_bold_text(&src[..span.end], abs)?;
+            let children = self.parse_inline(children_span);
+
+            return Some((InlineKind::Bold { children }, total_span));
+        }
+
+        if cursor.starts_with("~~") {
+            let (children_span, total_span) = Self::try_parse_strikethrough(&src[..span.end], abs)?;
+            let children = self.parse_inline(children_span);
+
+            return Some((InlineKind::Strikethrough { children }, total_span));
+        }
+
+        if cursor.starts_with("*") || cursor.starts_with("_") {
+            let (children_span, total_span) = Self::try_parse_italic_text(&src[..span.end], abs)?;
+            let children = self.parse_inline(children_span);
+
+            return Some((InlineKind::Italic { children }, total_span));
+        }
+        None
+    }
+
     /// Tries to get a Spans for a wikilink.
-    ///
-    /// # Arguments
-    ///
-    /// * `src` - A string slice for where to search.
-    /// * `pos` - Starting position to parse from.
     ///
     /// # Returns
     ///
-    /// Return an [`Option`] containing these items,
-    /// or [`None`] if wikilink is not found
-    /// * `target_span`
-    /// * `alias_span`
-    /// * `total_span`
-    /// * `new_pos`
+    /// `Some((target_span, alias_span, total_span))` where:
+    ///
+    /// * `target_span` covers the link target (between `[[` and `|` or `]]`).
+    /// * `alias_span` covers the display alias when a `|` separator is present.
+    /// * `total_span` covers the full `[[…]]` construct.
+    ///
+    /// Returns `None` when no valid wikilink is found.
     ///
     /// # Examples
     ///
     /// ```ignore
     /// let input = "[[Page Title|Display Text]]";
-    /// let (target, alias, total, new_pos) = Parser::try_parse_wikilink(input, 0).unwrap();
+    /// let (target, alias, total) = Parser::try_parse_wikilink(input, 0).unwrap();
     /// assert_eq!(target.as_str(input), "Page Title");
     /// assert_eq!(alias.map(|s| s.as_str(input)), Some("Display Text"));
-    /// assert_eq!(new_pos, 27);
     /// ```
     fn try_parse_wikilink(src: &str, pos: usize) -> Option<(Span, Option<Span>, Span)> {
-        let search_start = pos + 2;
-        let rest = &src[search_start..];
+        let content_start = pos + 2; // "[["
+        let rest = &src[content_start..];
 
         let close_offset = rest.find("]]")?;
-
         let content = &rest[..close_offset];
+
+        // reject nested link: "[[" means we start over
         if content.contains("[[") {
             return None;
         }
 
-        let close_offset_abs = close_offset + search_start;
+        let content_end = close_offset + content_start;
 
-        let (target_end, alias_span, total_len) = match content.find('|') {
-            Some(p) => {
-                let alias_start = search_start + p + 1;
-                let alias_span = Span::new(alias_start, close_offset_abs);
+        let (target_end, alias_span) = match content.find('|') {
+            Some(pipe_offset) => {
+                let alias_start = content_start + pipe_offset + 1;
                 (
-                    search_start + p,
-                    Some(alias_span),
-                    close_offset_abs + 2 - pos,
+                    content_start + pipe_offset,
+                    Some(Span::new(alias_start, content_end)),
                 )
             }
-            None => (close_offset_abs, None, close_offset_abs + 2 - pos),
+            None => (content_end, None),
         };
 
-        let target_span = Span::new(search_start, target_end);
-        let total_span = Span::new(pos, pos + total_len);
+        let target_span = Span::new(content_start, target_end);
+        let total_span = Span::new(pos, pos + content_end + 2 - pos);
 
         Some((target_span, alias_span, total_span))
     }
 
     /// Try to extract a link.
     ///
-    /// # Arguments
-    ///
-    /// * `src` - A string slice for where to search.
-    /// * `pos` - Starting position to parse from.
-    ///
     /// # Returns
     ///
-    /// `Some((children_span, url_span, total_span, new_pos))` when a link is
-    /// found, where:
-    ///
-    /// * `children_span` – Span covering the link text between `[` and `]`.
-    /// * `url_span` – Span covering the URL between `(` and `)`.
-    /// * `total_span` – Span covering the entire `[text](url)` construct.
-    /// * `new_pos` – Byte offset immediately after the closing `)`.
-    ///
-    /// `None` if a link is not possible.
+    /// `Some((children_span, url_span, total_span))` on success, `None`
+    /// otherwise.
     ///
     /// # Examples
     ///
     /// ```ignore
     /// let input = "[Google](https://google.com)";
-    /// let (children, url, total, new_pos) = Parser::try_parse_link(input, 0).unwrap();
+    /// let (children, url, total) = Parser::try_parse_link(input, 0).unwrap();
     /// assert_eq!(children.as_str(input), "Google");
     /// assert_eq!(url.as_str(input), "https://google.com");
-    /// assert_eq!(new_pos, 28);
     /// ```
     fn try_parse_link(src: &str, pos: usize) -> Option<(Span, Span, Span)> {
-        let search_start = pos + 1;
-        let remaining = &src[search_start..];
+        let content_start = pos + 1; // skips "["
+        let remaining = &src[content_start..];
 
         let mid_offset = remaining.find("](")?;
+        let children_text = &src[content_start..content_start + mid_offset];
 
-        let children_text = &src[search_start..search_start + mid_offset];
+        // reject nested links
         if children_text.contains('[') {
             return None;
         }
 
-        let url_start_abs = search_start + mid_offset + 2;
+        let url_start = content_start + mid_offset + 2; // +2 skips "]("
 
-        let url_remaining = &src[url_start_abs..];
+        let url_remaining = &src[url_start..];
         let url_end_offset = url_remaining.find(')')?;
-        let url_end_abs = url_start_abs + url_end_offset;
-        let total_end = url_end_abs + 1;
+        let url_end_abs = url_start + url_end_offset;
 
-        let url_text = &src[url_start_abs..url_end_abs];
+        let url_text = &src[url_start..url_end_abs];
         if url_text.contains('[') {
             return None;
         }
 
-        let children_span = Span::new(search_start, search_start + mid_offset);
-        let url_span = Span::new(url_start_abs, url_end_abs);
-        let total_span = Span::new(pos, total_end);
+        let children_span = Span::new(content_start, content_start + mid_offset);
+        let url_span = Span::new(url_start, url_end_abs);
+        let total_span = Span::new(pos, url_end_abs + 1);
 
         Some((children_span, url_span, total_span))
     }
 
     fn try_parse_bold_text(src: &str, pos: usize) -> Option<(Span, Span)> {
+        let delim = if src[pos..].starts_with("**") {
+            "**"
+        } else if src[pos..].starts_with("__") {
+            "__"
+        } else {
+            return None;
+        };
+
         let start_pos = pos + 2;
-        let bold_end_offset = src[2..].find("**").map(|i| start_pos + i)?;
+        let bold_end_offset = src[start_pos..].find(delim).map(|i| start_pos + i)?;
 
         if start_pos == bold_end_offset {
             return None;
@@ -467,6 +540,69 @@ impl<'src> Parser<'src> {
         Some((
             Span::new(start_pos, bold_end_offset),
             Span::new(pos, bold_end_offset + 2),
+        ))
+    }
+
+    fn try_parse_italic_text(src: &str, pos: usize) -> Option<(Span, Span)> {
+        let delim = if src[pos..].starts_with('*') {
+            '*'
+        } else if src[pos..].starts_with('_') {
+            '_'
+        } else {
+            return None;
+        };
+
+        let start_pos = pos + 1;
+        let italic_end_offset = src[start_pos..].find(delim).map(|i| start_pos + i)?;
+
+        if start_pos == italic_end_offset {
+            return None;
+        }
+
+        Some((
+            Span::new(start_pos, italic_end_offset),
+            Span::new(pos, italic_end_offset + 1),
+        ))
+    }
+
+    fn try_parse_bold_italic_text(src: &str, pos: usize) -> Option<(Span, Span)> {
+        let delim = if src[pos..].starts_with("***") {
+            "***"
+        } else if src[pos..].starts_with("___") {
+            "___"
+        } else {
+            return None;
+        };
+
+        let len = delim.len();
+        let start_pos = pos + len;
+        let end_offset = src[start_pos..].find(delim).map(|i| start_pos + i)?;
+
+        if start_pos == end_offset {
+            return None;
+        }
+
+        Some((
+            Span::new(start_pos, end_offset),
+            Span::new(pos, end_offset + len),
+        ))
+    }
+
+    fn try_parse_strikethrough(src: &str, pos: usize) -> Option<(Span, Span)> {
+        if !src[pos..].starts_with("~~") {
+            return None;
+        }
+
+        let start_pos = pos + 2;
+        let end_offset = src[start_pos..].find("~~").map(|i| start_pos + i)?;
+
+        if start_pos == end_offset {
+            return None;
+        }
+
+        Some((
+            Span::new(start_pos, end_offset),
+            Span::new(pos, end_offset + 2),
         ))
     }
 
@@ -1002,6 +1138,236 @@ mod tests {
                     }],
                 },
                 span: Span::new(0, 15),
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_escape_bold_and_heading() {
+        let input = r"\*\*not bold\*\*   \# not a heading";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::Text,
+                        span: Span::new(0, 35),
+                    }],
+                },
+                span: Span::new(0, 35),
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_italic_star() {
+        let input = "*italic*";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::Italic {
+                            children: vec![Inline {
+                                kind: InlineKind::Text,
+                                span: Span::new(1, 7),
+                            }],
+                        },
+                        span: Span::new(0, 8),
+                    }],
+                },
+                span: Span::new(0, 8),
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_italic_underscore() {
+        let input = "_italic_";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::Italic {
+                            children: vec![Inline {
+                                kind: InlineKind::Text,
+                                span: Span::new(1, 7),
+                            }],
+                        },
+                        span: Span::new(0, 8),
+                    }],
+                },
+                span: Span::new(0, 8),
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_bold_underscore() {
+        let input = "__bold__";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::Bold {
+                            children: vec![Inline {
+                                kind: InlineKind::Text,
+                                span: Span::new(2, 6),
+                            }],
+                        },
+                        span: Span::new(0, 8),
+                    }],
+                },
+                span: Span::new(0, 8),
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_bold_italic_triple_star() {
+        let input = "***bold italic***";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::BoldItalic {
+                            children: vec![Inline {
+                                kind: InlineKind::Text,
+                                span: Span::new(3, 14),
+                            }],
+                        },
+                        span: Span::new(0, 17),
+                    }],
+                },
+                span: Span::new(0, 17),
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_bold_italic_triple_underscore() {
+        let input = "___bold italic___";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::BoldItalic {
+                            children: vec![Inline {
+                                kind: InlineKind::Text,
+                                span: Span::new(3, 14),
+                            }],
+                        },
+                        span: Span::new(0, 17),
+                    }],
+                },
+                span: Span::new(0, 17),
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_strikethrough() {
+        let input = "~~strikethrough~~";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::Strikethrough {
+                            children: vec![Inline {
+                                kind: InlineKind::Text,
+                                span: Span::new(2, 15),
+                            }],
+                        },
+                        span: Span::new(0, 17),
+                    }],
+                },
+                span: Span::new(0, 17),
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_empty_italic() {
+        let input = "**";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::Text,
+                        span: Span::new(0, 2),
+                    }],
+                },
+                span: Span::new(0, 2),
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_empty_bold_italic() {
+        let input = "******";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::Text,
+                        span: Span::new(0, 6),
+                    }],
+                },
+                span: Span::new(0, 6),
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_empty_strikethrough() {
+        let input = "~~~~";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::Text,
+                        span: Span::new(0, 4),
+                    }],
+                },
+                span: Span::new(0, 4),
             }],
         };
 
