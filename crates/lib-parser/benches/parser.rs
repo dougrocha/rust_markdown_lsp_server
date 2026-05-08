@@ -9,28 +9,28 @@ fn main() {
 
 // Old parser benchmarks
 
-#[divan::bench]
+#[divan::bench(min_time = 2)]
 fn old_parse_small_markdown_file() {
     let content = fs::read_to_string("benches/test_small.md").unwrap();
 
     divan::black_box(markdown_parser().parse(&content));
 }
 
-#[divan::bench]
+#[divan::bench(min_time = 2)]
 fn old_parse_medium_markdown_file() {
     let content = fs::read_to_string("benches/test_medium.md").unwrap();
 
     divan::black_box(markdown_parser().parse(&content));
 }
 
-#[divan::bench]
+#[divan::bench(min_time = 2)]
 fn old_parse_large_markdown_file() {
     let content = fs::read_to_string("benches/test_large.md").unwrap();
 
     divan::black_box(markdown_parser().parse(&content));
 }
 
-#[divan::bench]
+#[divan::bench(min_time = 2)]
 fn old_parse_multiple_files_sequentially() {
     let files = vec![
         "benches/test_small.md",
@@ -45,7 +45,7 @@ fn old_parse_multiple_files_sequentially() {
     }
 }
 
-#[divan::bench]
+#[divan::bench(min_time = 2)]
 fn old_parse_multiple_files_concurrently() {
     let files = vec![
         "benches/test_small.md",
@@ -71,28 +71,28 @@ fn old_parse_multiple_files_concurrently() {
 
 // New parser benchmarks
 
-#[divan::bench]
+#[divan::bench(min_time = 2)]
 fn new_parse_small_markdown_file() {
     let content = fs::read_to_string("benches/test_small.md").unwrap();
 
     divan::black_box(NewParser::new(&content).parse());
 }
 
-#[divan::bench]
+#[divan::bench(min_time = 2)]
 fn new_parse_medium_markdown_file() {
     let content = fs::read_to_string("benches/test_medium.md").unwrap();
 
     divan::black_box(NewParser::new(&content).parse());
 }
 
-#[divan::bench]
+#[divan::bench(min_time = 2)]
 fn new_parse_large_markdown_file() {
     let content = fs::read_to_string("benches/test_large.md").unwrap();
 
     divan::black_box(NewParser::new(&content).parse());
 }
 
-#[divan::bench]
+#[divan::bench(min_time = 2)]
 fn new_parse_multiple_files_sequentially() {
     let files = vec![
         "benches/test_small.md",
@@ -107,7 +107,7 @@ fn new_parse_multiple_files_sequentially() {
     }
 }
 
-#[divan::bench]
+#[divan::bench(min_time = 2)]
 fn new_parse_multiple_files_concurrently() {
     let files = vec![
         "benches/test_small.md",
