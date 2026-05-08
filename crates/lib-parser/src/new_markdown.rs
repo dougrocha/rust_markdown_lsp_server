@@ -48,6 +48,9 @@ enum InlineKind {
         target_span: Span,
         children: Option<Vec<Inline>>,
     },
+    Footnote {
+        identifier: Span,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -224,7 +227,7 @@ impl<'src> Parser<'src> {
                 None | Some('\n') => {
                     break;
                 }
-                Some(_) if Self::is_heading(&self.cursor.src[self.cursor.pos..]) => {
+                Some(_) if is_heading(&self.cursor.src[self.cursor.pos..]) => {
                     break;
                 }
                 Some(_) => {
@@ -263,6 +266,19 @@ impl<'src> Parser<'src> {
                             InlineKind::Wikilink {
                                 target_span,
                                 children,
+                            },
+                            total_span,
+                        )
+                    },
+                )
+            } else if local_cursor.starts_with("[^") {
+                let local_line_end = local_cursor.find('\n').unwrap_or(span.end);
+
+                Self::try_parse_footnote(&self.cursor.src[..local_line_end], abs).map(
+                    |(identifier_span, total_span)| {
+                        (
+                            InlineKind::Footnote {
+                                identifier: identifier_span,
                             },
                             total_span,
                         )
@@ -355,23 +371,25 @@ impl<'src> Parser<'src> {
         let rest = &src[search_start..];
 
         let close_offset = rest.find("]]")?;
-        let close_abs = search_start + close_offset;
 
-        let content = &src[search_start..close_abs];
-
+        let content = &rest[..close_offset];
         if content.contains("[[") {
             return None;
         }
 
-        let pipe_offset = content.find('|');
+        let close_offset_abs = close_offset + search_start;
 
-        let (target_end, alias_span, total_len) = match pipe_offset {
+        let (target_end, alias_span, total_len) = match content.find('|') {
             Some(p) => {
                 let alias_start = search_start + p + 1;
-                let alias_span = Span::new(alias_start, close_abs);
-                (search_start + p, Some(alias_span), close_abs + 2 - pos)
+                let alias_span = Span::new(alias_start, close_offset_abs);
+                (
+                    search_start + p,
+                    Some(alias_span),
+                    close_offset_abs + 2 - pos,
+                )
             }
-            None => (close_abs, None, close_abs + 2 - pos),
+            None => (close_offset_abs, None, close_offset_abs + 2 - pos),
         };
 
         let target_span = Span::new(search_start, target_end);
@@ -439,26 +457,45 @@ impl<'src> Parser<'src> {
     }
 
     fn try_parse_bold_text(src: &str, pos: usize) -> Option<(Span, Span)> {
-        if !src[pos..].starts_with("**") {
+        let start_pos = pos + 2;
+        let bold_end_offset = src[2..].find("**").map(|i| start_pos + i)?;
+
+        if start_pos == bold_end_offset {
             return None;
         }
 
-        let start_pos = pos + 2;
-        let remaining = &src[start_pos..];
-
-        let bold_end_offset = remaining.find("**")?;
-        let end = start_pos + bold_end_offset + 2;
-
         Some((
-            Span::new(start_pos, start_pos + bold_end_offset),
-            Span::new(pos, end),
+            Span::new(start_pos, bold_end_offset),
+            Span::new(pos, bold_end_offset + 2),
         ))
     }
 
-    fn is_heading(src: &str) -> bool {
-        let trimmed = src.trim_start_matches('#');
-        !trimmed.is_empty() && trimmed.starts_with(' ')
+    fn try_parse_footnote(src: &str, pos: usize) -> Option<(Span, Span)> {
+        let ident_start = pos + 2;
+        let ident_end = src[2..].find(']').map(|i| ident_start + i)?;
+
+        if ident_start == ident_end {
+            return None;
+        }
+
+        if src
+            .get(2..ident_end - pos)?
+            .chars()
+            .any(|c| c.is_ascii_whitespace())
+        {
+            return None;
+        }
+
+        Some((
+            Span::new(ident_start, ident_end),
+            Span::new(pos, ident_end + 1),
+        ))
     }
+}
+
+fn is_heading(src: &str) -> bool {
+    let trimmed = src.trim_start_matches('#');
+    !trimmed.is_empty() && trimmed.starts_with(' ')
 }
 
 #[cfg(test)]
@@ -865,6 +902,26 @@ mod tests {
     }
 
     #[test]
+    fn parse_empty_bold() {
+        let input = "****";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                span: Span::new(0, 4),
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        span: Span::new(0, 4),
+                        kind: InlineKind::Text,
+                    }],
+                },
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
     fn parse_bold_with_children() {
         let input = "**bold [link](http://example.com) text**";
         let result = Parser::new(input).parse();
@@ -899,6 +956,52 @@ mod tests {
                         },
                     }],
                 },
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_bold_text_mid_string() {
+        let res = Parser::try_parse_bold_text("hi **x** y", 3);
+        assert_eq!(res, Some((Span::new(5, 6), Span::new(3, 8))));
+    }
+
+    #[test]
+    fn parse_footnote_mid_string() {
+        let input = "see [^abc] more";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::Text,
+                        span: Span::new(0, 15),
+                    }],
+                },
+                span: Span::new(0, 15),
+            }],
+        };
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_footnote_rejects_whitespace_mid_string() {
+        let input = "see [^a b] more";
+        let result = Parser::new(input).parse();
+
+        let expected = Document {
+            blocks: vec![Block {
+                kind: BlockKind::Paragraph {
+                    children: vec![Inline {
+                        kind: InlineKind::Text,
+                        span: Span::new(0, 15),
+                    }],
+                },
+                span: Span::new(0, 15),
             }],
         };
 
