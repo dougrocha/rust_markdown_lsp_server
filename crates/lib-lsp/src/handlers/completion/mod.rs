@@ -39,7 +39,7 @@ enum CompletionIntent<'a> {
 
 impl CompletionIntent<'_> {
     fn from_position<'a>(document: &'a Document, byte_pos: usize) -> Option<CompletionIntent<'a>> {
-        let slice = document.content.slice(..);
+        let slice = document.source.slice(..);
 
         if byte_pos >= 2 {
             let trigger = slice
@@ -152,7 +152,7 @@ fn handle_invoked_completion(
     document: &Document,
     position: Position,
 ) -> Option<Vec<CompletionItem>> {
-    let slice = document.content.slice(..);
+    let slice = document.source.slice(..);
     let byte_pos = slice.position_to_byte_offset(position);
 
     let (anchor_idx, anchor_char) = find_byte_backwards_any(&slice, byte_pos, b"[(#:\n")?;
@@ -177,7 +177,7 @@ fn handle_trigger_completion(
     document: &Document,
     position: Position,
 ) -> Option<Vec<CompletionItem>> {
-    let slice = document.content.slice(..);
+    let slice = document.source.slice(..);
     let byte_pos = slice.position_to_byte_offset(position);
 
     let intent = CompletionIntent::from_position(document, byte_pos)?;
@@ -231,7 +231,7 @@ fn complete_document_links(
             documentation: Some(Documentation::String(format!(
                 "Preview of {}:\n\n```markdown\n{}\n```",
                 link_text,
-                doc.content
+                doc.source
                     .to_string()
                     .lines()
                     .take(10)
@@ -305,7 +305,7 @@ fn complete_headers(
 }
 
 fn has_closing_chars(document: &Document, byte_pos: usize, link_type: LinkType) -> bool {
-    let slice = document.content.slice(..);
+    let slice = document.source.slice(..);
 
     if document
         .get_reference_at_position(slice.byte_offset_to_position(byte_pos))
@@ -348,7 +348,7 @@ fn extract_file_and_link_type_from_context(
     document: &Document,
     byte_pos: usize,
 ) -> Option<(&str, LinkType)> {
-    let slice = document.content.slice(..);
+    let slice = document.source.slice(..);
 
     let (idx, found_char) = find_byte_backwards_any(&slice, byte_pos, b"[(")?;
 

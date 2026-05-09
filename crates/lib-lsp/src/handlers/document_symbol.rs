@@ -29,7 +29,7 @@ pub fn process_document_symbol(
         return Ok(Some(DocumentSymbolResponse::DocumentSymbolList(vec![])));
     }
 
-    let total_lines = document.content.len_lines() as u32;
+    let total_lines = document.source.len_lines() as u32;
     let section_ranges: Vec<Range> = headers
         .iter()
         .enumerate()

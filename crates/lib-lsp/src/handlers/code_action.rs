@@ -37,7 +37,7 @@ fn handle_non_range(
     range: &Range,
 ) -> Result<Option<Vec<CodeActionResponse>>> {
     let document = get_document!(lsp, uri);
-    let slice = document.content.slice(..);
+    let slice = document.source.slice(..);
 
     let source_root = lsp.get_workspace_root_for_path(&document.path);
 

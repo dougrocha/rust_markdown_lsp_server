@@ -30,7 +30,7 @@ pub fn get_content(
 
     let document = get_document!(&lsp, &target_uri);
 
-    let slice = document.content.slice(..);
+    let slice = document.source.slice(..);
 
     let Some(header_target) = header else {
         return Ok(slice.to_string());
@@ -193,7 +193,7 @@ mod tests {
 
         let document = Document::new(std::path::PathBuf::from("/TEST.md"), input, 0).unwrap();
         let references = document.references;
-        let content = document.content.slice(..);
+        let content = document.source.slice(..);
 
         // Test H3 section extraction - should stop at next H3, H2, or H1
         let target_header = "H3 Header".to_string();
