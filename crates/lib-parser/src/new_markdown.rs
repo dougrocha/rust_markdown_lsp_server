@@ -6,6 +6,7 @@ pub struct Span {
 
 impl Span {
     pub fn new(start: usize, end: usize) -> Self {
+        assert!(start <= end, "Span::new: start ({start}) > end ({end})");
         Self { start, end }
     }
 
@@ -14,7 +15,7 @@ impl Span {
     }
 
     pub fn as_str<'a>(&self, src: &'a str) -> &'a str {
-        &src[self.start..self.end]
+        src.get(self.start..self.end).unwrap_or_default()
     }
 
     pub fn is_empty(&self) -> bool {
@@ -130,7 +131,7 @@ impl<'src> Cursor<'src> {
     }
 
     fn consume_escaped(&mut self) -> Option<Span> {
-        if !self.starts_with("\\") {
+        if !self.src[self.pos..].starts_with('\\') {
             return None;
         }
 
@@ -179,8 +180,13 @@ impl<'src> Cursor<'src> {
 
     /// Returns the absolute position of the first occurrence of `c`
     /// at or after the current position, or `None` if not found.
-    fn find(&self, c: char) -> Option<usize> {
+    fn find_abs(&self, c: char) -> Option<usize> {
         self.src[self.pos..].find(c).map(|i| self.abs_pos() + i)
+    }
+
+    fn is_heading(&self) -> bool {
+        let trimmed = self.src[self.pos..].trim_start_matches('#');
+        !trimmed.is_empty() && trimmed.starts_with(' ')
     }
 }
 
@@ -213,7 +219,7 @@ impl<'src> Parser<'src> {
         match self.cursor.peek() {
             Some('#') => self.parse_heading(),
             Some(_) => self.parse_paragraph(),
-            None => panic!("We should never panic here because we handle eof elsewhere"),
+            None => unreachable!("parse_block called at EOF; caller must check is_eof() first"),
         }
     }
 
@@ -263,7 +269,7 @@ impl<'src> Parser<'src> {
 
             match next {
                 None | Some('\n') => break,
-                Some(_) if is_heading(&self.cursor.src[self.cursor.pos..]) => break,
+                Some(_) if self.cursor.is_heading() => break,
 
                 // continuation line — keep accumulating
                 Some(_) => continue,
@@ -339,7 +345,7 @@ impl<'src> Parser<'src> {
         let src = self.cursor.src;
 
         if cursor.starts_with("[[") {
-            let line_end = cursor.find('\n').unwrap_or(span.end);
+            let line_end = cursor.find_abs('\n').unwrap_or(span.end);
             let (target_span, alias_span, total_span) =
                 Self::try_parse_wikilink(&src[..line_end], abs)?;
             let children = alias_span.map(|s| self.parse_inline(s));
@@ -354,7 +360,7 @@ impl<'src> Parser<'src> {
         }
 
         if cursor.starts_with("[^") {
-            let local_line_end = cursor.find('\n').unwrap_or(span.end);
+            let local_line_end = cursor.find_abs('\n').unwrap_or(span.end);
 
             let (identifier_span, total_span) =
                 Self::try_parse_footnote(&src[..local_line_end], abs)?;
@@ -431,15 +437,6 @@ impl<'src> Parser<'src> {
     /// * `total_span` covers the full `[[…]]` construct.
     ///
     /// Returns `None` when no valid wikilink is found.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// let input = "[[Page Title|Display Text]]";
-    /// let (target, alias, total) = Parser::try_parse_wikilink(input, 0).unwrap();
-    /// assert_eq!(target.as_str(input), "Page Title");
-    /// assert_eq!(alias.map(|s| s.as_str(input)), Some("Display Text"));
-    /// ```
     fn try_parse_wikilink(src: &str, pos: usize) -> Option<(Span, Option<Span>, Span)> {
         let content_start = pos + 2; // "[["
         let rest = &src[content_start..];
@@ -477,15 +474,6 @@ impl<'src> Parser<'src> {
     ///
     /// `Some((children_span, url_span, total_span))` on success, `None`
     /// otherwise.
-    ///
-    /// # Examples
-    ///
-    /// ```ignore
-    /// let input = "[Google](https://google.com)";
-    /// let (children, url, total) = Parser::try_parse_link(input, 0).unwrap();
-    /// assert_eq!(children.as_str(input), "Google");
-    /// assert_eq!(url.as_str(input), "https://google.com");
-    /// ```
     fn try_parse_link(src: &str, pos: usize) -> Option<(Span, Span, Span)> {
         let content_start = pos + 1; // skips "["
         let remaining = &src[content_start..];
@@ -516,6 +504,19 @@ impl<'src> Parser<'src> {
         Some((children_span, url_span, total_span))
     }
 
+    fn try_parse_delimited(src: &str, pos: usize, delim: &str) -> Option<(Span, Span)> {
+        if !src[pos..].starts_with(delim) {
+            return None;
+        }
+        let len = delim.len();
+        let start_pos = pos + len;
+        let end = src[start_pos..].find(delim).map(|i| start_pos + i)?;
+        if start_pos == end {
+            return None;
+        }
+        Some((Span::new(start_pos, end), Span::new(pos, end + len)))
+    }
+
     fn try_parse_bold_text(src: &str, pos: usize) -> Option<(Span, Span)> {
         let delim = if src[pos..].starts_with("**") {
             "**"
@@ -524,40 +525,18 @@ impl<'src> Parser<'src> {
         } else {
             return None;
         };
-
-        let start_pos = pos + 2;
-        let bold_end_offset = src[start_pos..].find(delim).map(|i| start_pos + i)?;
-
-        if start_pos == bold_end_offset {
-            return None;
-        }
-
-        Some((
-            Span::new(start_pos, bold_end_offset),
-            Span::new(pos, bold_end_offset + 2),
-        ))
+        Self::try_parse_delimited(src, pos, delim)
     }
 
     fn try_parse_italic_text(src: &str, pos: usize) -> Option<(Span, Span)> {
         let delim = if src[pos..].starts_with('*') {
-            '*'
+            "*"
         } else if src[pos..].starts_with('_') {
-            '_'
+            "_"
         } else {
             return None;
         };
-
-        let start_pos = pos + 1;
-        let italic_end_offset = src[start_pos..].find(delim).map(|i| start_pos + i)?;
-
-        if start_pos == italic_end_offset {
-            return None;
-        }
-
-        Some((
-            Span::new(start_pos, italic_end_offset),
-            Span::new(pos, italic_end_offset + 1),
-        ))
+        Self::try_parse_delimited(src, pos, delim)
     }
 
     fn try_parse_bold_italic_text(src: &str, pos: usize) -> Option<(Span, Span)> {
@@ -568,37 +547,11 @@ impl<'src> Parser<'src> {
         } else {
             return None;
         };
-
-        let len = delim.len();
-        let start_pos = pos + len;
-        let end_offset = src[start_pos..].find(delim).map(|i| start_pos + i)?;
-
-        if start_pos == end_offset {
-            return None;
-        }
-
-        Some((
-            Span::new(start_pos, end_offset),
-            Span::new(pos, end_offset + len),
-        ))
+        Self::try_parse_delimited(src, pos, delim)
     }
 
     fn try_parse_strikethrough(src: &str, pos: usize) -> Option<(Span, Span)> {
-        if !src[pos..].starts_with("~~") {
-            return None;
-        }
-
-        let start_pos = pos + 2;
-        let end_offset = src[start_pos..].find("~~").map(|i| start_pos + i)?;
-
-        if start_pos == end_offset {
-            return None;
-        }
-
-        Some((
-            Span::new(start_pos, end_offset),
-            Span::new(pos, end_offset + 2),
-        ))
+        Self::try_parse_delimited(src, pos, "~~")
     }
 
     fn try_parse_footnote(src: &str, pos: usize) -> Option<(Span, Span)> {
@@ -622,11 +575,6 @@ impl<'src> Parser<'src> {
             Span::new(pos, ident_end + 1),
         ))
     }
-}
-
-fn is_heading(src: &str) -> bool {
-    let trimmed = src.trim_start_matches('#');
-    !trimmed.is_empty() && trimmed.starts_with(' ')
 }
 
 #[cfg(test)]
