@@ -2,7 +2,7 @@ use gen_lsp_types::{
     BaseSymbolInformation, Location, SymbolInformation, SymbolKind, Uri, WorkspaceSymbolParams,
     WorkspaceSymbolResponse,
 };
-use lib_core::{document::references::ReferenceKind, path::extract_filename_stem};
+use lib_core::{document::references::ReferenceKindOld, path::extract_filename_stem};
 use miette::Result;
 
 use crate::{server_state::ServerState, uri::UriExt};
@@ -21,7 +21,7 @@ pub fn process_workspace_symbol(
             let uri = Uri::from_file_path(doc.path.as_path());
 
             doc.references.iter().filter_map(move |r| {
-                let ReferenceKind::Header { content, .. } = &r.kind else {
+                let ReferenceKindOld::Header { content, .. } = &r.kind else {
                     return None;
                 };
 

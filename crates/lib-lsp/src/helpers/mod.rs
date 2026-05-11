@@ -8,11 +8,12 @@ use lib_core::{
     config::{LinkConfig, LinkGenerationStyle},
     document::{
         Document,
-        references::{Reference, ReferenceKind},
+        references::{ReferenceKindOld, ReferenceOld},
     },
     path::{extract_filename_stem, find_relative_path, slug::header_slug},
-    text_buffer_conversions::TextBufferConversions,
 };
+
+use crate::text_buffer_conversions::TextBufferConversions;
 
 use crate::{
     get_document, handlers::link_resolver::resolve_target_uri, server_state::ServerState,
@@ -113,7 +114,7 @@ fn generate_absolute_path(root: &Uri, target: &Uri) -> Result<String> {
 /// NOTE: Assumes `links` are sorted by position (top to bottom).
 pub fn extract_header_section<'a>(
     header: &str,
-    links: &[Reference],
+    links: &[ReferenceOld],
     content: RopeSlice<'a>,
 ) -> (Option<RopeSlice<'a>>, Range) {
     let mut start_position: Option<Position> = None;
@@ -125,7 +126,7 @@ pub fn extract_header_section<'a>(
     let normalized_target = header_slug(target_content);
 
     for link in links {
-        if let ReferenceKind::Header {
+        if let ReferenceKindOld::Header {
             level,
             content: header_content,
         } = &link.kind
@@ -265,7 +266,7 @@ mod tests {
     #[test]
     fn test_extract_header_section_edge_cases() {
         use gen_lsp_types::{Position, Range};
-        use lib_core::document::references::{Reference, ReferenceKind};
+        use lib_core::document::references::{ReferenceKindOld, ReferenceOld};
         use ropey::Rope;
 
         // Test case: H1 section that goes to end of file
@@ -274,15 +275,15 @@ mod tests {
         let slice = rope.slice(..);
 
         let references = vec![
-            Reference {
-                kind: ReferenceKind::Header {
+            ReferenceOld {
+                kind: ReferenceKindOld::Header {
                     level: 1,
                     content: "Main Header".to_string(),
                 },
                 range: Range::new(Position::new(0, 0), Position::new(0, 13)),
             },
-            Reference {
-                kind: ReferenceKind::Header {
+            ReferenceOld {
+                kind: ReferenceKindOld::Header {
                     level: 2,
                     content: "Sub Header".to_string(),
                 },

@@ -1,7 +1,7 @@
 use gen_lsp_types::{
     DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, Position, Range, SymbolKind,
 };
-use lib_core::document::references::ReferenceKind;
+use lib_core::document::references::ReferenceKindOld;
 use miette::{Context, Result};
 
 use crate::{get_document, server_state::ServerState, uri::UriExt};
@@ -17,7 +17,7 @@ pub fn process_document_symbol(
         .references
         .iter()
         .filter_map(|r| {
-            if let ReferenceKind::Header { level, content } = &r.kind {
+            if let ReferenceKindOld::Header { level, content } = &r.kind {
                 Some((*level, content.clone(), r.range))
             } else {
                 None

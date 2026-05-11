@@ -4,6 +4,7 @@ pub(crate) mod macros;
 pub(crate) mod messages;
 pub(crate) mod rpc;
 pub(crate) mod server;
+pub(crate) mod text_buffer_conversions;
 pub(crate) mod uri;
 
 #[cfg(test)]

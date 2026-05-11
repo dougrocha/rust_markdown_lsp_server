@@ -3,7 +3,7 @@ use gen_lsp_types::{
     DeleteFileOptions, DocumentChange, Edit, OptionalVersionedTextDocumentIdentifier, Position,
     Range, TextDocumentEdit, TextEdit, Uri, WorkspaceEdit,
 };
-use lib_core::document::references::ReferenceKind;
+use lib_core::document::references::ReferenceKindOld;
 use miette::{Context, Result, miette};
 
 use crate::{
@@ -41,7 +41,7 @@ fn handle_non_range(
 
     let source_root = lsp.get_workspace_root_for_path(&document.path);
 
-    let Some(reference) = document.get_reference_at_position(range.start) else {
+    let Some(reference) = document.get_reference_at_position_old(range.start) else {
         return Ok(Some(vec![]));
     };
 
@@ -53,7 +53,7 @@ fn handle_non_range(
     let mut actions: Vec<CodeActionResponse> = Vec::new();
 
     match &reference.kind {
-        ReferenceKind::Header { content, level } => {
+        ReferenceKindOld::Header { content, level } => {
             let (header_content, range) =
                 extract_header_section(content, &document.references, slice);
             let delta = 1i32 - *level as i32;
@@ -125,8 +125,8 @@ fn handle_non_range(
                 }));
             }
         }
-        ReferenceKind::Link { target, header, .. }
-        | ReferenceKind::WikiLink { target, header, .. } => {
+        ReferenceKindOld::Link { target, header, .. }
+        | ReferenceKindOld::WikiLink { target, header, .. } => {
             let target_uri = resolve_target_uri(lsp, document, target)?;
 
             // TODO: normalize later

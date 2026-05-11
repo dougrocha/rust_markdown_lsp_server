@@ -13,7 +13,7 @@ pub fn process_references(
     let position = params.text_document_position_params.position;
 
     let document = get_document!(lsp, &uri);
-    let reference_at_position = document.get_reference_at_position(position);
+    let reference_at_position = document.get_reference_at_position_old(position);
 
     let mut reference_locations = if let Some(reference) = reference_at_position {
         ReferenceCollector::new(document, &uri, reference, lsp).collect_from(&lsp.documents)

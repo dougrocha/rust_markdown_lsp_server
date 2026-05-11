@@ -2,7 +2,7 @@ use gen_lsp_types::{Location, Uri};
 use lib_core::{
     document::{
         Document,
-        references::{Reference as DocReference, ReferenceKind},
+        references::{ReferenceKindOld, ReferenceOld as DocReference},
     },
     vault::Vault,
 };
@@ -99,11 +99,11 @@ impl<'a> ReferenceCollector<'a> {
         reference: &DocReference,
     ) -> Option<Location> {
         match &self.source_ref.kind {
-            ReferenceKind::Header { content, .. } => {
+            ReferenceKindOld::Header { content, .. } => {
                 self.match_header_reference(uri, reference, content)
             }
-            ReferenceKind::Link { header, target, .. }
-            | ReferenceKind::WikiLink { header, target, .. } => {
+            ReferenceKindOld::Link { header, target, .. }
+            | ReferenceKindOld::WikiLink { header, target, .. } => {
                 // Resolve the source link's target to compare with other references
                 let resolved_target = match resolve_target_uri(self.lsp, self.source_doc, target) {
                     Ok(target) => target,
@@ -148,10 +148,10 @@ impl<'a> ReferenceCollector<'a> {
         let location = Location::new(uri.clone(), reference.range);
 
         match &reference.kind {
-            ReferenceKind::Link { .. } | ReferenceKind::WikiLink { .. } => self
+            ReferenceKindOld::Link { .. } | ReferenceKindOld::WikiLink { .. } => self
                 .match_link_to_link(reference, source_header, source_target)
                 .map(|_| location),
-            ReferenceKind::Header { .. } => self
+            ReferenceKindOld::Header { .. } => self
                 .match_link_to_header(reference, uri, source_header, source_target)
                 .map(|_| location),
         }

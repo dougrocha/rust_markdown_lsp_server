@@ -3,7 +3,7 @@ use std::{collections::HashMap, fmt::Debug, path::PathBuf};
 use gen_lsp_types::{Diagnostic, Position};
 use lib_parser::new_markdown::{Block, BlockKind, Inline, InlineKind, Parser, Span};
 use miette::Result;
-use references::Reference;
+use references::ReferenceOld;
 use ropey::Rope;
 
 use crate::document::{
@@ -14,6 +14,20 @@ use crate::document::{
 pub mod index;
 pub mod metadata;
 pub mod references;
+
+pub enum Reference<'a> {
+    Link(&'a Link),
+    Header(&'a Header),
+}
+
+impl<'a> Reference<'a> {
+    pub fn span(&self) -> Span {
+        match self {
+            Reference::Link(link) => link.span,
+            Reference::Header(header) => header.span,
+        }
+    }
+}
 
 pub struct Edit {
     span: Span,
@@ -36,12 +50,12 @@ pub struct Document {
     pub version: i32,
     pub source: Rope,
 
-    pub headers: Vec<Header>,
-    pub links: Vec<Link>,
+    headers: Vec<Header>,
+    links: Vec<Link>,
 
     // TODO: Delete
     pub frontmatter: HashMap<String, FrontmatterValue>,
-    pub references: Vec<Reference>,
+    pub references: Vec<ReferenceOld>,
     pub diagnostics: Vec<Diagnostic>,
 
     // TODO: remove from here as only the lsp server cares about this
@@ -67,10 +81,25 @@ impl Document {
         Ok(())
     }
 
-    pub fn get_reference_at_position(&self, position: Position) -> Option<&Reference> {
+    pub fn get_reference_at_position_old(&self, position: Position) -> Option<&ReferenceOld> {
         self.references
             .iter()
             .find(|reference| reference.contains_position(position))
+    }
+
+    pub fn links(&self) -> impl Iterator<Item = &Link> {
+        self.links.iter()
+    }
+
+    pub fn headers(&self) -> impl Iterator<Item = &Header> {
+        self.headers.iter()
+    }
+
+    pub fn get_reference_at_offset<'a>(&'a self, byte_offset: usize) -> Option<Reference<'a>> {
+        self.links()
+            .map(Reference::Link)
+            .chain(self.headers().map(Reference::Header))
+            .find(|r| r.span().contains_offset(byte_offset))
     }
 
     // fn parse_and_analyze(&mut self) -> Result<()> {
@@ -229,12 +258,12 @@ impl Document {
         self.links.clear();
 
         for block in &blocks {
-            extract_block(self, block);
+            extract_block(self, block, content);
         }
     }
 }
 
-fn extract_block(doc: &mut Document, block: &Block) {
+fn extract_block(doc: &mut Document, block: &Block, content: &str) {
     match &block.kind {
         BlockKind::Heading { level, children } => {
             let text_span = span_of_children(children);
@@ -243,40 +272,57 @@ fn extract_block(doc: &mut Document, block: &Block) {
                 text_span,
                 level: *level,
             });
-            extract_inlines(doc, children);
+            extract_inlines(doc, children, content);
         }
         BlockKind::Paragraph { children } => {
-            extract_inlines(doc, children);
+            extract_inlines(doc, children, content);
         }
         BlockKind::List { children, .. } => {
             for child in children {
-                extract_block(doc, child);
+                extract_block(doc, child, content);
             }
         }
     }
 }
 
-fn extract_inlines(doc: &mut Document, inlines: &[Inline]) {
+/// Splits a span on `#`, returning `(before, Some(after))` or `(original, None)`.
+fn split_span_on_hash(span: Span, content: &str) -> (Span, Option<Span>) {
+    let text = span.as_str(content);
+    match text.find('#') {
+        Some(offset) => {
+            let target = Span::new(span.start, span.start + offset);
+            let header = Span::new(span.start + offset + 1, span.end);
+            (target, Some(header))
+        }
+        None => (span, None),
+    }
+}
+
+fn extract_inlines(doc: &mut Document, inlines: &[Inline], content: &str) {
     for inline in inlines {
         match &inline.kind {
             InlineKind::Wikilink {
                 target_span,
                 children,
             } => {
+                let (target, header) = split_span_on_hash(*target_span, content);
                 doc.links.push(Link {
                     span: inline.span,
                     kind: LinkKind::Wiki {
-                        target: *target_span,
+                        target,
+                        header,
                         alias: children.as_deref().map(span_of_children),
                     },
                 });
             }
             InlineKind::Link { children, url_span } => {
+                let (url, header) = split_span_on_hash(*url_span, content);
                 doc.links.push(Link {
                     span: inline.span,
                     kind: LinkKind::Inline {
                         label: span_of_children(children),
-                        url: *url_span,
+                        url,
+                        header,
                         title: None,
                     },
                 });
@@ -285,7 +331,7 @@ fn extract_inlines(doc: &mut Document, inlines: &[Inline]) {
             | InlineKind::Italic { children }
             | InlineKind::BoldItalic { children }
             | InlineKind::Strikethrough { children } => {
-                extract_inlines(doc, children);
+                extract_inlines(doc, children, content);
             }
             InlineKind::Text | InlineKind::Footnote { .. } => {}
         }
@@ -330,7 +376,7 @@ mod tests {
     fn extracts_wikilink() {
         let d = doc("[[target]]");
         assert_eq!(d.links.len(), 1);
-        let LinkKind::Wiki { target, alias } = &d.links[0].kind else {
+        let LinkKind::Wiki { target, alias, .. } = &d.links[0].kind else {
             panic!("expected wiki link");
         };
         assert_eq!(target.as_str("[[target]]"), "target");
@@ -340,7 +386,7 @@ mod tests {
     #[test]
     fn extracts_wikilink_with_alias() {
         let d = doc("[[target|my alias]]");
-        let LinkKind::Wiki { target, alias } = &d.links[0].kind else {
+        let LinkKind::Wiki { target, alias, .. } = &d.links[0].kind else {
             panic!("expected wiki link");
         };
         assert_eq!(target.as_str("[[target|my alias]]"), "target");

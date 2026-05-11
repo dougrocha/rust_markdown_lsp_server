@@ -1,8 +1,9 @@
 use lib_core::{
-    document::{Document, references::ReferenceKind},
+    document::{Document, references::ReferenceKindOld},
     path::slug::header_slug,
-    text_buffer_conversions::TextBufferConversions,
 };
+
+use crate::text_buffer_conversions::TextBufferConversions;
 
 use gen_lsp_types::{
     CompletionItem, CompletionItemKind, CompletionItemLabelDetails, CompletionParams,
@@ -276,7 +277,7 @@ fn complete_headers(
     let file_path = file_uri.to_file_path()?;
     let ref_doc = lsp.documents.get_document(&file_path)?;
     for doc_ref in &ref_doc.references {
-        if let ReferenceKind::Header { level, content } = &doc_ref.kind {
+        if let ReferenceKindOld::Header { level, content } = &doc_ref.kind {
             let header_id = header_slug(content);
 
             let label = content.clone();
@@ -308,7 +309,7 @@ fn has_closing_chars(document: &Document, byte_pos: usize, link_type: LinkType) 
     let slice = document.source.slice(..);
 
     if document
-        .get_reference_at_position(slice.byte_offset_to_position(byte_pos))
+        .get_reference_at_position_old(slice.byte_offset_to_position(byte_pos))
         .is_some()
     {
         return true;

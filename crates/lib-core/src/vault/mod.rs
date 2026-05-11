@@ -7,7 +7,7 @@ use std::{
 
 use miette::Result;
 
-use crate::document::{Document, references::Reference};
+use crate::document::{Document, references::ReferenceOld};
 
 #[derive(Default)]
 pub struct Vault {
@@ -61,11 +61,11 @@ impl Vault {
         self.documents.values()
     }
 
-    pub fn get_references(&self) -> impl Iterator<Item = &Reference> {
+    pub fn get_references(&self) -> impl Iterator<Item = &ReferenceOld> {
         self.iter().flat_map(|doc| doc.references.iter())
     }
 
-    pub fn get_references_with_path(&self) -> impl Iterator<Item = (&PathBuf, &Reference)> {
+    pub fn get_references_with_path(&self) -> impl Iterator<Item = (&PathBuf, &ReferenceOld)> {
         self.documents.iter().flat_map(|(path, doc)| {
             doc.references
                 .iter()

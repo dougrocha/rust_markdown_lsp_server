@@ -21,6 +21,28 @@ impl Span {
     pub fn is_empty(&self) -> bool {
         self.len() == 0
     }
+
+    /// Returns true if this span fully contains `other`.
+    pub fn contains(&self, other: Self) -> bool {
+        self.start <= other.start && other.end <= self.end
+    }
+
+    /// Returns true if this span contains the given byte offset.
+    pub fn contains_offset(&self, offset: usize) -> bool {
+        self.start <= offset && offset < self.end
+    }
+}
+
+impl From<Span> for std::ops::Range<usize> {
+    fn from(span: Span) -> Self {
+        span.start..span.end
+    }
+}
+
+impl From<std::ops::Range<usize>> for Span {
+    fn from(range: std::ops::Range<usize>) -> Self {
+        Span::new(range.start, range.end)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]

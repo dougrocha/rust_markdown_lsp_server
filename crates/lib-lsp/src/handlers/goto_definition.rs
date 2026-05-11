@@ -1,5 +1,5 @@
 use lib_core::{
-    document::{Document, references::ReferenceKind},
+    document::{Document, references::ReferenceKindOld},
     path::slug::header_slug,
 };
 
@@ -21,12 +21,12 @@ pub fn process_goto_definition(
     let document = get_document!(lsp, &uri);
 
     let reference = document
-        .get_reference_at_position(position)
+        .get_reference_at_position_old(position)
         .context("No reference found at cursor position")?;
 
     match &reference.kind {
-        ReferenceKind::Link { target, header, .. }
-        | ReferenceKind::WikiLink { target, header, .. } => {
+        ReferenceKindOld::Link { target, header, .. }
+        | ReferenceKindOld::WikiLink { target, header, .. } => {
             let (target_doc, range) = find_definition(lsp, document, target, header.as_deref())?;
 
             let target_uri = UriExt::from_file_path(&target_doc.path)
@@ -60,7 +60,7 @@ fn find_definition<'a>(
     let normalized_target = header_slug(target_content);
 
     let reference = target_doc.references.iter().find(|reference| {
-        let ReferenceKind::Header { content, .. } = &reference.kind else {
+        let ReferenceKindOld::Header { content, .. } = &reference.kind else {
             return false;
         };
 

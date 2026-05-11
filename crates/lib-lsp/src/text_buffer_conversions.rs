@@ -20,8 +20,9 @@ pub trait TextBufferConversions {
             .expect("LSP position out of bounds")
     }
 
-    /// Converts a byte offset span (Range<usize>) to an LSP-compatible Range.
-    fn byte_to_lsp_range(&self, span: &Range<usize>) -> LspRange {
+    /// Converts anything that can be turned into a byte range into an LSP-compatible Range.
+    fn byte_to_lsp_range(&self, span: impl Into<Range<usize>>) -> LspRange {
+        let span = span.into();
         if span.is_empty() && span.start == self.byte_len() {
             let pos = self.byte_offset_to_position(span.start);
             return LspRange::new(pos, pos);

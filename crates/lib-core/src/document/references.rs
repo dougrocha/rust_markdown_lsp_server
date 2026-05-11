@@ -1,12 +1,12 @@
 use gen_lsp_types::{Position, Range};
 
 #[derive(Debug, Clone, PartialEq)]
-pub struct Reference {
-    pub kind: ReferenceKind,
+pub struct ReferenceOld {
+    pub kind: ReferenceKindOld,
     pub range: Range,
 }
 
-impl Reference {
+impl ReferenceOld {
     pub fn contains_position(&self, position: Position) -> bool {
         if position.line < self.range.start.line || position.line > self.range.end.line {
             return false;
@@ -26,7 +26,7 @@ impl Reference {
 
     pub fn to_file_text(&self) -> String {
         match &self.kind {
-            ReferenceKind::Link {
+            ReferenceKindOld::Link {
                 target,
                 alt_text,
                 title: _,
@@ -40,7 +40,7 @@ impl Reference {
                 // TODO: Add title
                 format!("[{}]({})", alt_text, path)
             }
-            ReferenceKind::WikiLink {
+            ReferenceKindOld::WikiLink {
                 target,
                 alias,
                 header,
@@ -55,7 +55,7 @@ impl Reference {
                     None => format!("[[{}]]", path),
                 }
             }
-            ReferenceKind::Header { level, content } => {
+            ReferenceKindOld::Header { level, content } => {
                 format!("{} {}", "#".repeat(*level), content)
             }
         }
@@ -63,7 +63,7 @@ impl Reference {
 }
 
 #[derive(Debug, Clone, PartialEq)]
-pub enum ReferenceKind {
+pub enum ReferenceKindOld {
     Header {
         /// The level of the header - H1, H2, H3
         level: usize,
@@ -87,18 +87,18 @@ pub enum ReferenceKind {
     },
 }
 
-impl ReferenceKind {
+impl ReferenceKindOld {
     pub fn is_link(&self) -> bool {
         matches!(
             self,
-            ReferenceKind::Link { .. } | ReferenceKind::WikiLink { .. }
+            ReferenceKindOld::Link { .. } | ReferenceKindOld::WikiLink { .. }
         )
     }
 
     /// Get the target from a link
     pub fn get_target(&self) -> Option<&str> {
         match self {
-            ReferenceKind::Link { target, .. } | ReferenceKind::WikiLink { target, .. } => {
+            ReferenceKindOld::Link { target, .. } | ReferenceKindOld::WikiLink { target, .. } => {
                 Some(target.as_str())
             }
             _ => None,
@@ -107,7 +107,7 @@ impl ReferenceKind {
 
     pub fn get_link_header(&self) -> Option<&str> {
         match self {
-            ReferenceKind::Link { header, .. } | ReferenceKind::WikiLink { header, .. } => {
+            ReferenceKindOld::Link { header, .. } | ReferenceKindOld::WikiLink { header, .. } => {
                 header.as_deref()
             }
             _ => None,
@@ -116,21 +116,21 @@ impl ReferenceKind {
 
     pub fn get_content(&self) -> Option<&str> {
         match self {
-            ReferenceKind::Header { content, .. } => Some(content.as_str()),
+            ReferenceKindOld::Header { content, .. } => Some(content.as_str()),
             _ => None,
         }
     }
 
     pub fn get_level(&self) -> Option<usize> {
         match self {
-            ReferenceKind::Header { level, .. } => Some(*level),
+            ReferenceKindOld::Header { level, .. } => Some(*level),
             _ => None,
         }
     }
 
     pub fn get_alias(&self) -> Option<&str> {
         match self {
-            ReferenceKind::WikiLink { alias, .. } => alias.as_deref(),
+            ReferenceKindOld::WikiLink { alias, .. } => alias.as_deref(),
             _ => None,
         }
     }

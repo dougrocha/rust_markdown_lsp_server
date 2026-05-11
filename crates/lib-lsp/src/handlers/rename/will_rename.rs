@@ -4,7 +4,7 @@ use gen_lsp_types::{RenameFilesParams, TextEdit, Uri, WorkspaceEdit};
 use lib_core::{
     document::{
         Document,
-        references::{Reference, ReferenceKind},
+        references::{ReferenceKindOld, ReferenceOld},
     },
     path::{find_relative_path, resolve_reference_target},
 };
@@ -75,16 +75,16 @@ pub fn process_will_rename_files(
     }))
 }
 
-fn create_reference_with_new_uri(reference: &Reference, new_target: String) -> Reference {
+fn create_reference_with_new_uri(reference: &ReferenceOld, new_target: String) -> ReferenceOld {
     let ref_kind = match reference.kind.clone() {
-        ReferenceKind::WikiLink { alias, header, .. } => ReferenceKind::WikiLink {
+        ReferenceKindOld::WikiLink { alias, header, .. } => ReferenceKindOld::WikiLink {
             target: new_target,
             alias,
             header,
         },
-        ReferenceKind::Link {
+        ReferenceKindOld::Link {
             alt_text, header, ..
-        } => ReferenceKind::Link {
+        } => ReferenceKindOld::Link {
             target: new_target,
             header,
             alt_text,
@@ -93,7 +93,7 @@ fn create_reference_with_new_uri(reference: &Reference, new_target: String) -> R
         other => other,
     };
 
-    Reference {
+    ReferenceOld {
         kind: ref_kind,
         range: reference.range,
     }
@@ -103,7 +103,7 @@ fn create_reference_with_new_uri(reference: &Reference, new_target: String) -> R
 fn find_references_to_uri<'a>(
     lsp: &'a ServerState,
     match_uri: &Uri,
-) -> impl Iterator<Item = (&'a Document, &'a Reference)> {
+) -> impl Iterator<Item = (&'a Document, &'a ReferenceOld)> {
     let match_path: Option<PathBuf> = match_uri.to_file_path().map(|c| c.into_owned());
 
     lsp.documents.iter().flat_map(move |doc| {

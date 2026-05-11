@@ -7,12 +7,12 @@ use error::PathError;
 use miette::{Result, miette};
 use path_clean::PathClean;
 
-use crate::document::references::Reference;
+use crate::document::references::ReferenceOld;
 
 /// Resolve a reference to its absolute filepath equivalent
 pub fn resolve_reference_target(
     source_path: impl AsRef<Path>,
-    reference: &Reference,
+    reference: &ReferenceOld,
 ) -> Result<PathBuf> {
     let target_str = reference.kind.get_target().ok_or(miette!("No target"))?;
 

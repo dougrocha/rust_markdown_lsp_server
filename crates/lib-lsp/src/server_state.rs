@@ -64,7 +64,7 @@ impl ServerState {
 
             let markdown_files = walkdir::WalkDir::new(&root_path)
                 .into_iter()
-                .filter_map(|entry| entry.ok())
+                .filter_map(Result::ok)
                 .filter(|entry| {
                     let path = entry.path();
                     path.is_file() && path.extension().is_some_and(|ext| ext == "md")
