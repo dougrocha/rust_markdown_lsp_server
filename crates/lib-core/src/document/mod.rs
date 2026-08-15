@@ -1,10 +1,10 @@
 use std::{collections::HashMap, fmt::Debug, path::PathBuf};
 
-use gen_lsp_types::{Diagnostic, Position};
+use gen_lsp_types::{Diagnostic, Position, Range as LspRange};
 use lib_parser::new_markdown::{Block, BlockKind, Inline, InlineKind, Parser, Span};
 use miette::Result;
-use references::ReferenceOld;
-use ropey::Rope;
+use references::{ReferenceKindOld, ReferenceOld};
+use ropey::{Rope, RopeSlice};
 
 use crate::document::{
     index::{Header, Link, LinkKind},
@@ -102,150 +102,6 @@ impl Document {
             .find(|r| r.span().contains_offset(byte_offset))
     }
 
-    // fn parse_and_analyze(&mut self) -> Result<()> {
-    //     self.references.clear();
-    //     self.diagnostics.clear();
-    //
-    //     let doc_content_slice = self.source.slice(..);
-    //     let input = doc_content_slice.to_string();
-    //
-    //     let (parsed_markdown, errors) = markdown_parser().parse(&input).into_output_errors();
-    //     for err in errors {
-    //         self.diagnostics.push(Diagnostic {
-    //             range: doc_content_slice.byte_to_lsp_range(&err.span().into_range()),
-    //             severity: Some(DiagnosticSeverity::Warning),
-    //             code: None,
-    //             code_description: None,
-    //             source: Some("parser".to_string()),
-    //             message: err.reason().to_string(),
-    //             related_information: None,
-    //             tags: None,
-    //             data: None,
-    //         });
-    //     }
-    //
-    //     let Some(parsed_markdown) = parsed_markdown else {
-    //         tracing::debug!("Failed to parse");
-    //         return Ok(());
-    //     };
-    //
-    //     let frontmatter = parsed_markdown.frontmatter;
-    //     if let Some(frontmatter) = frontmatter {
-    //         for (key, val) in frontmatter.0 {
-    //             self.frontmatter
-    //                 .insert(key.to_string(), FrontmatterValue::from(val));
-    //         }
-    //     }
-    //
-    //     let body = parsed_markdown.body;
-    //     body.into_iter().for_each(|spanned| {
-    //         let Spanned(markdown, span) = spanned;
-    //         match markdown {
-    //             MarkdownNode::Header { level, content } => {
-    //                 let reference = Reference {
-    //                     kind: ReferenceKind::Header {
-    //                         level,
-    //                         content: content.to_string(),
-    //                     },
-    //                     range: doc_content_slice.byte_to_lsp_range(&span.into_range()),
-    //                 };
-    //                 self.references.push(reference);
-    //             }
-    //             MarkdownNode::Paragraph(inlines) => {
-    //                 for inline in inlines {
-    //                     let Spanned(inline_markdown, inline_span) = inline;
-    //
-    //                     if let InlineMarkdownNode::Link(link) = inline_markdown {
-    //                         match link {
-    //                             LinkType::InlineLink { text, uri, header } => {
-    //                                 let reference = Reference {
-    //                                     kind: ReferenceKind::Link {
-    //                                         target: uri.to_string(),
-    //                                         alt_text: text.to_string(),
-    //                                         title: None,
-    //                                         header: header.map(|x| x.to_string()),
-    //                                     },
-    //                                     range: doc_content_slice
-    //                                         .byte_to_lsp_range(&inline_span.into_range()),
-    //                                 };
-    //                                 self.references.push(reference);
-    //                             }
-    //                             LinkType::WikiLink {
-    //                                 target,
-    //                                 display_text,
-    //                                 header,
-    //                             } => {
-    //                                 let reference = Reference {
-    //                                     kind: ReferenceKind::WikiLink {
-    //                                         target: target.to_string(),
-    //                                         alias: display_text.map(|d| d.to_string()),
-    //                                         header: header.map(|x| x.to_string()),
-    //                                     },
-    //                                     range: doc_content_slice
-    //                                         .byte_to_lsp_range(&inline_span.into_range()),
-    //                                 };
-    //                                 self.references.push(reference);
-    //                             }
-    //                             LinkType::ImageLink { .. } => {
-    //                                 tracing::debug!("Not currently supporting images")
-    //                             }
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //             MarkdownNode::ListItem {
-    //                 checkbox: _,
-    //                 content: list_content,
-    //             } => {
-    //                 // Process links inside list item content (same as paragraph)
-    //                 for inline in list_content {
-    //                     let Spanned(inline_markdown, inline_span) = inline;
-    //
-    //                     if let InlineMarkdownNode::Link(link) = inline_markdown {
-    //                         match link {
-    //                             LinkType::InlineLink { text, uri, header } => {
-    //                                 let reference = Reference {
-    //                                     kind: ReferenceKind::Link {
-    //                                         target: uri.to_string(),
-    //                                         alt_text: text.to_string(),
-    //                                         title: None,
-    //                                         header: header.map(|x| x.to_string()),
-    //                                     },
-    //                                     range: doc_content_slice
-    //                                         .byte_to_lsp_range(&inline_span.into_range()),
-    //                                 };
-    //                                 self.references.push(reference);
-    //                             }
-    //                             LinkType::WikiLink {
-    //                                 target,
-    //                                 display_text,
-    //                                 header,
-    //                             } => {
-    //                                 let reference = Reference {
-    //                                     kind: ReferenceKind::WikiLink {
-    //                                         target: target.to_string(),
-    //                                         alias: display_text.map(|d| d.to_string()),
-    //                                         header: header.map(|x| x.to_string()),
-    //                                     },
-    //                                     range: doc_content_slice
-    //                                         .byte_to_lsp_range(&inline_span.into_range()),
-    //                                 };
-    //                                 self.references.push(reference);
-    //                             }
-    //                             LinkType::ImageLink { .. } => {
-    //                                 tracing::debug!("Not currently supporting images")
-    //                             }
-    //                         }
-    //                     }
-    //                 }
-    //             }
-    //             _ => {}
-    //         }
-    //     });
-    //
-    //     Ok(())
-    // }
-
     pub fn apply_edit(&mut self, edit: Edit) {
         todo!()
     }
@@ -260,7 +116,63 @@ impl Document {
         for block in &blocks {
             extract_block(self, block, content);
         }
+
+        self.references = build_references(self, content);
     }
+}
+
+fn byte_offset_to_position(slice: &RopeSlice, byte_offset: usize) -> Position {
+    let line_idx = slice.byte_to_line(byte_offset);
+    let line_start_char = slice.line_to_char(line_idx);
+    let global_char_idx = slice.byte_to_char(byte_offset);
+    let char_offset = global_char_idx - line_start_char;
+    Position::new(line_idx as u32, char_offset as u32)
+}
+
+fn byte_span_to_lsp_range(slice: &RopeSlice, span: Span) -> LspRange {
+    let start_pos = byte_offset_to_position(slice, span.start);
+    let end_pos = byte_offset_to_position(slice, span.end);
+    LspRange::new(start_pos, end_pos)
+}
+
+fn build_references(doc: &Document, content: &str) -> Vec<ReferenceOld> {
+    let slice = doc.source.slice(..);
+    let mut references = Vec::with_capacity(doc.headers.len() + doc.links.len());
+
+    for header in &doc.headers {
+        references.push(ReferenceOld {
+            kind: ReferenceKindOld::Header {
+                level: header.level as usize,
+                content: header.text_span.as_str(content).to_string(),
+            },
+            range: byte_span_to_lsp_range(&slice, header.span),
+        });
+    }
+
+    for link in &doc.links {
+        let header = link.header_str(&doc.source).map(|h| h.to_string());
+        let kind = match &link.kind {
+            LinkKind::Wiki { target, alias, .. } => ReferenceKindOld::WikiLink {
+                target: target.as_str(content).to_string(),
+                alias: alias.map(|a| a.as_str(content).to_string()),
+                header,
+            },
+            LinkKind::Inline {
+                label, url, title, ..
+            } => ReferenceKindOld::Link {
+                target: url.as_str(content).to_string(),
+                alt_text: label.as_str(content).to_string(),
+                title: title.map(|t| t.as_str(content).to_string()),
+                header,
+            },
+        };
+        references.push(ReferenceOld {
+            kind,
+            range: byte_span_to_lsp_range(&slice, link.span),
+        });
+    }
+
+    references
 }
 
 fn extract_block(doc: &mut Document, block: &Block, content: &str) {
@@ -353,6 +265,43 @@ mod tests {
 
     fn doc(content: &str) -> Document {
         Document::new(PathBuf::from("test.md"), content, 0).unwrap()
+    }
+
+    #[test]
+    fn builds_references_for_headers_and_links() {
+        let d = doc("# Hello\n\n[[note#Section|alias]] and [text](url#Frag)");
+        assert_eq!(d.references.len(), 3);
+
+        let ReferenceKindOld::Header { level, content } = &d.references[0].kind else {
+            panic!("expected header reference");
+        };
+        assert_eq!(*level, 1);
+        assert_eq!(content, "Hello");
+
+        let ReferenceKindOld::WikiLink {
+            target,
+            alias,
+            header,
+        } = &d.references[1].kind
+        else {
+            panic!("expected wikilink reference");
+        };
+        assert_eq!(target, "note");
+        assert_eq!(alias.as_deref(), Some("alias"));
+        assert_eq!(header.as_deref(), Some("Section"));
+
+        let ReferenceKindOld::Link {
+            target,
+            alt_text,
+            header,
+            ..
+        } = &d.references[2].kind
+        else {
+            panic!("expected link reference");
+        };
+        assert_eq!(target, "url");
+        assert_eq!(alt_text, "text");
+        assert_eq!(header.as_deref(), Some("Frag"));
     }
 
     #[test]
