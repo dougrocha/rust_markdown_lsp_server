@@ -32,17 +32,10 @@ impl Vault {
 
     pub fn open_document(&mut self, path: &Path, version: i32, content: &str) -> Result<()> {
         if let Some(doc) = self.get_document_mut(path) {
-            doc.is_open = true;
             doc.update(content, version)?;
         }
 
         Ok(())
-    }
-
-    pub fn close_document(&mut self, path: &Path) {
-        if let Some(doc) = self.get_document_mut(path) {
-            doc.is_open = false;
-        }
     }
 
     pub fn remove_document(&mut self, path: &Path) {

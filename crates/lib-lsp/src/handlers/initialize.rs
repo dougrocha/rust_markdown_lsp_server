@@ -84,6 +84,7 @@ pub fn process_initialize(request: Request) -> Result<(Response, InitializeParam
                     "[".to_string(),
                     ":".to_string(),
                     "(".to_string(),
+                    "^".to_string(),
                 ]),
                 ..Default::default()
             }),

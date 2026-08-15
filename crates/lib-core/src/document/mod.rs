@@ -1,12 +1,14 @@
 use std::{collections::HashMap, fmt::Debug, path::PathBuf};
 
-use gen_lsp_types::Diagnostic;
-use lib_parser::new_markdown::{Block, BlockKind, Inline, InlineKind, Parser, Span};
+use lib_parser::markdown::{Block, BlockKind, Inline, InlineKind, Parser, Span};
 use miette::Result;
 use ropey::Rope;
 
 use crate::document::{
-    index::{Header, Link, LinkKind},
+    index::{
+        DiagnosticCode, FootnoteDefinition, FootnoteReference, Header, Link, LinkKind, Severity,
+        Tag,
+    },
     metadata::FrontmatterValue,
 };
 
@@ -17,6 +19,8 @@ pub mod metadata;
 pub enum Reference<'a> {
     Link(&'a Link),
     Header(&'a Header),
+    FootnoteRef(&'a FootnoteReference),
+    FootnoteDef(&'a FootnoteDefinition),
 }
 
 impl<'a> Reference<'a> {
@@ -24,6 +28,8 @@ impl<'a> Reference<'a> {
         match self {
             Reference::Link(link) => link.span,
             Reference::Header(header) => header.span,
+            Reference::FootnoteRef(footnote) => footnote.span,
+            Reference::FootnoteDef(footnote) => footnote.span,
         }
     }
 }
@@ -51,13 +57,12 @@ pub struct Document {
 
     headers: Vec<Header>,
     links: Vec<Link>,
+    footnote_definitions: Vec<FootnoteDefinition>,
+    footnote_references: Vec<FootnoteReference>,
+    tags: Vec<Tag>,
+    diagnostics: Vec<index::Diagnostic>,
 
-    // TODO: Delete
     pub frontmatter: HashMap<String, FrontmatterValue>,
-    pub diagnostics: Vec<Diagnostic>,
-
-    // TODO: remove from here as only the lsp server cares about this
-    pub is_open: bool,
 }
 
 impl Document {
@@ -87,10 +92,33 @@ impl Document {
         self.headers.iter()
     }
 
+    pub fn footnote_definitions(&self) -> impl Iterator<Item = &FootnoteDefinition> {
+        self.footnote_definitions.iter()
+    }
+
+    pub fn footnote_references(&self) -> impl Iterator<Item = &FootnoteReference> {
+        self.footnote_references.iter()
+    }
+
+    pub fn find_footnote_definition(&self, identifier: &str) -> Option<&FootnoteDefinition> {
+        self.footnote_definitions()
+            .find(|def| def.identifier_str(&self.source) == identifier)
+    }
+
+    pub fn tags(&self) -> impl Iterator<Item = &Tag> {
+        self.tags.iter()
+    }
+
+    pub fn diagnostics(&self) -> impl Iterator<Item = &index::Diagnostic> {
+        self.diagnostics.iter()
+    }
+
     pub fn get_reference_at_offset<'a>(&'a self, byte_offset: usize) -> Option<Reference<'a>> {
         self.links()
             .map(Reference::Link)
             .chain(self.headers().map(Reference::Header))
+            .chain(self.footnote_references().map(Reference::FootnoteRef))
+            .chain(self.footnote_definitions().map(Reference::FootnoteDef))
             .find(|r| r.span().contains_offset(byte_offset))
     }
 
@@ -104,6 +132,11 @@ impl Document {
 
         self.headers.clear();
         self.links.clear();
+        self.footnote_definitions.clear();
+        self.footnote_references.clear();
+        self.tags.clear();
+        self.diagnostics.clear();
+        self.frontmatter.clear();
 
         for block in &blocks {
             extract_block(self, block, content);
@@ -128,6 +161,34 @@ fn extract_block(doc: &mut Document, block: &Block, content: &str) {
         BlockKind::List { children, .. } => {
             for child in children {
                 extract_block(doc, child, content);
+            }
+        }
+        BlockKind::ListItem {
+            inline, children, ..
+        } => {
+            extract_inlines(doc, inline, content);
+            for child in children {
+                extract_block(doc, child, content);
+            }
+        }
+        BlockKind::FootnoteDefinition {
+            identifier,
+            children,
+        } => {
+            doc.footnote_definitions.push(FootnoteDefinition {
+                span: block.span,
+                identifier: *identifier,
+                content_span: span_of_children(children),
+            });
+            extract_inlines(doc, children, content);
+        }
+        BlockKind::Frontmatter => {
+            let text = block.span.as_str(content);
+            if let Some(frontmatter) = lib_parser::yaml::parse_frontmatter(text) {
+                for (key, value) in frontmatter.0 {
+                    doc.frontmatter
+                        .insert(key.to_string(), FrontmatterValue::from(value));
+                }
             }
         }
     }
@@ -175,13 +236,46 @@ fn extract_inlines(doc: &mut Document, inlines: &[Inline], content: &str) {
                     },
                 });
             }
+            InlineKind::Image { alt_span, url_span } => {
+                doc.links.push(Link {
+                    span: inline.span,
+                    kind: LinkKind::Image {
+                        alt: *alt_span,
+                        url: *url_span,
+                    },
+                });
+            }
+            InlineKind::Tag { name } => {
+                let name_text = name.as_str(content);
+                if name_text.ends_with('/') || name_text.ends_with('-') {
+                    doc.diagnostics.push(index::Diagnostic {
+                        span: inline.span,
+                        severity: Severity::Warning,
+                        code: DiagnosticCode::MalformedTag,
+                        message: format!(
+                            "Tag '#{name_text}' ends with a dangling separator"
+                        ),
+                    });
+                }
+
+                doc.tags.push(Tag {
+                    span: inline.span,
+                    name_span: *name,
+                });
+            }
             InlineKind::Bold { children }
             | InlineKind::Italic { children }
             | InlineKind::BoldItalic { children }
             | InlineKind::Strikethrough { children } => {
                 extract_inlines(doc, children, content);
             }
-            InlineKind::Text | InlineKind::Footnote { .. } => {}
+            InlineKind::Footnote { identifier } => {
+                doc.footnote_references.push(FootnoteReference {
+                    span: inline.span,
+                    identifier: *identifier,
+                });
+            }
+            InlineKind::Text => {}
         }
     }
 }
@@ -304,6 +398,54 @@ mod tests {
         let d = doc("# Heading\n\nSome text with [[a]] and [b](https://b.com)");
         assert_eq!(d.headers.len(), 1);
         assert_eq!(d.links.len(), 2);
+    }
+
+    #[test]
+    fn extracts_frontmatter() {
+        let d = doc("---\ntitle: Hello\ntags:\n  - a\n  - b\n---\n# Heading");
+        assert_eq!(
+            d.frontmatter.get("title").and_then(|v| v.as_string()),
+            Some("Hello")
+        );
+        assert_eq!(
+            d.frontmatter.get("tags").and_then(|v| v.as_list()),
+            Some(&["a".to_string(), "b".to_string()][..])
+        );
+        assert_eq!(d.headers.len(), 1);
+    }
+
+    #[test]
+    fn extracts_tag() {
+        let content = "hello #project/sub world";
+        let d = doc(content);
+
+        assert_eq!(d.tags().count(), 1);
+        let tag = d.tags().next().unwrap();
+        assert_eq!(tag.name_span.as_str(content), "project/sub");
+    }
+
+    #[test]
+    fn extracts_image() {
+        let content = "![alt text](image.png)";
+        let d = doc(content);
+
+        assert_eq!(d.links.len(), 1);
+        let LinkKind::Image { alt, url } = &d.links[0].kind else {
+            panic!("expected image link");
+        };
+        assert_eq!(alt.as_str(content), "alt text");
+        assert_eq!(url.as_str(content), "image.png");
+    }
+
+    #[test]
+    fn extracts_footnote_definition() {
+        let content = "See[^note] below\n\n[^note]: the note text";
+        let d = doc(content);
+
+        assert_eq!(d.footnote_definitions().count(), 1);
+        let def = d.footnote_definitions().next().unwrap();
+        assert_eq!(def.identifier.as_str(content), "note");
+        assert_eq!(def.content_span.as_str(content), "the note text");
     }
 
     #[test]

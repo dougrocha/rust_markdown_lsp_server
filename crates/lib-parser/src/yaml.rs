@@ -1,7 +1,3 @@
-use chumsky::prelude::*;
-
-use crate::ParseError;
-
 #[derive(Debug, Clone, PartialEq)]
 pub enum Yaml<'a> {
     String(&'a str),
@@ -23,76 +19,124 @@ impl<'a> Frontmatter<'a> {
     }
 }
 
-fn unquoted_string<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
-    any()
-        .filter(|c: &char| !c.is_control() && *c != '\n' && *c != ':' && *c != '#')
-        .repeated()
-        .at_least(1)
-        .to_slice()
+fn unquote(value: &str) -> &str {
+    if value.len() >= 2 && value.starts_with('"') && value.ends_with('"') {
+        &value[1..value.len() - 1]
+    } else {
+        value
+    }
 }
 
-fn quoted_string<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
-    just('"')
-        .ignore_then(any().filter(|c| *c != '"').repeated().to_slice())
-        .then_ignore(just('"'))
+/// Parses a full frontmatter block, including the leading and trailing `---`
+/// delimiter lines. Only a flat subset of YAML is supported: `key: value`
+/// pairs and `key:` followed by an indented `- item` list.
+/// Returns `None` if `src` is not a well-formed frontmatter block.
+pub fn parse_frontmatter(src: &str) -> Option<Frontmatter<'_>> {
+    let mut lines = src.lines();
+
+    if lines.next()?.trim() != "---" {
+        return None;
+    }
+
+    let mut entries: Vec<KeyValue<'_>> = Vec::new();
+    let mut pending_key: Option<&str> = None;
+    let mut pending_list: Vec<&str> = Vec::new();
+
+    for line in lines {
+        if line.trim() == "---" {
+            if let Some(key) = pending_key.take() {
+                entries.push((key, Yaml::List(pending_list)));
+            }
+            return Some(Frontmatter(entries));
+        }
+
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+
+        if let Some(rest) = trimmed.strip_prefix("- ") {
+            if pending_key.is_none() {
+                return None; // list item without a preceding key
+            }
+            pending_list.push(unquote(rest.trim()));
+            continue;
+        }
+
+        if let Some(key) = pending_key.take() {
+            entries.push((key, Yaml::List(std::mem::take(&mut pending_list))));
+        }
+
+        let colon = trimmed.find(':')?;
+        let key = trimmed[..colon].trim();
+        if key.is_empty() {
+            return None;
+        }
+        let value = trimmed[colon + 1..].trim();
+
+        if value.is_empty() {
+            pending_key = Some(key);
+        } else {
+            entries.push((key, Yaml::String(unquote(value))));
+        }
+    }
+
+    None // no closing delimiter found
 }
 
-fn string_value<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
-    quoted_string().or(unquoted_string())
-}
+#[cfg(test)]
+mod tests {
+    use super::*;
 
-fn list_item_parser<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
-    text::whitespace()
-        .at_least(1)
-        .then_ignore(just('-'))
-        .then_ignore(text::whitespace())
-        .ignore_then(string_value())
-}
+    #[test]
+    fn parses_simple_key_values() {
+        let input = "---\nid: some-id\ntags: one\n---";
+        let result = parse_frontmatter(input).unwrap();
+        assert_eq!(
+            result,
+            Frontmatter(vec![
+                ("id", Yaml::String("some-id")),
+                ("tags", Yaml::String("one")),
+            ])
+        );
+    }
 
-fn indented_list_parser<'a>() -> impl Parser<'a, &'a str, Yaml<'a>, ParseError<'a>> {
-    list_item_parser()
-        .separated_by(text::newline())
-        .at_least(1)
-        .collect::<Vec<_>>()
-        .map(Yaml::List)
-}
+    #[test]
+    fn parses_indented_list() {
+        let input = "---\nid: some-id\ntags:\n  - one\n  - two\n---";
+        let result = parse_frontmatter(input).unwrap();
+        assert_eq!(
+            result,
+            Frontmatter(vec![
+                ("id", Yaml::String("some-id")),
+                ("tags", Yaml::List(vec!["one", "two"])),
+            ])
+        );
+    }
 
-fn string_value_parser<'a>() -> impl Parser<'a, &'a str, Yaml<'a>, ParseError<'a>> {
-    string_value().map(Yaml::String)
-}
+    #[test]
+    fn parses_quoted_string() {
+        let input = "---\ntitle: \"Hello: World\"\n---";
+        let result = parse_frontmatter(input).unwrap();
+        assert_eq!(result.get("title"), Some(&Yaml::String("Hello: World")));
+    }
 
-fn key_value_pair_parser<'a>() -> impl Parser<'a, &'a str, KeyValue<'a>, ParseError<'a>> {
-    key_parser().then_ignore(just(':')).then(
-        text::newline()
-            .ignore_then(indented_list_parser())
-            .or(text::whitespace().ignore_then(string_value_parser())),
-    )
-}
+    #[test]
+    fn trailing_list_is_flushed_at_closing_delimiter() {
+        let input = "---\ntags:\n  - one\n  - two\n---";
+        let result = parse_frontmatter(input).unwrap();
+        assert_eq!(result.get("tags"), Some(&Yaml::List(vec!["one", "two"])));
+    }
 
-fn key_parser<'a>() -> impl Parser<'a, &'a str, &'a str, ParseError<'a>> {
-    text::ident().to_slice()
-}
+    #[test]
+    fn missing_closing_delimiter_returns_none() {
+        let input = "---\nid: some-id\n";
+        assert_eq!(parse_frontmatter(input), None);
+    }
 
-fn front_matter_body_parser<'a>() -> impl Parser<'a, &'a str, Frontmatter<'a>, ParseError<'a>> {
-    key_value_pair_parser()
-        .separated_by(text::newline())
-        .at_least(1)
-        .collect::<Vec<_>>()
-        .map(Frontmatter)
-}
-
-fn delimiter<'a>() -> impl Parser<'a, &'a str, (), ParseError<'a>> {
-    text::whitespace()
-        .or_not()
-        .ignore_then(just("---"))
-        .then_ignore(text::whitespace().or_not())
-        .then_ignore(text::newline().or_not())
-        .ignored()
-}
-
-pub fn yaml_parser<'a>() -> impl Parser<'a, &'a str, Frontmatter<'a>, ParseError<'a>> {
-    delimiter()
-        .ignore_then(front_matter_body_parser())
-        .then_ignore(text::newline().or_not())
-        .then_ignore(delimiter())
+    #[test]
+    fn missing_opening_delimiter_returns_none() {
+        let input = "id: some-id\n---";
+        assert_eq!(parse_frontmatter(input), None);
+    }
 }

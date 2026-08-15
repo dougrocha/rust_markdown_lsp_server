@@ -15,3 +15,4 @@ target/
 .DS_store
 
 tmp/
+test_files/

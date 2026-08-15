@@ -181,6 +181,7 @@ fn handle_non_range(
                 ..Default::default()
             }));
         }
+        Reference::FootnoteRef(_) | Reference::FootnoteDef(_) => {}
     }
 
     Ok(Some(actions))

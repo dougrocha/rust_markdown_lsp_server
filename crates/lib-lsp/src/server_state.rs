@@ -1,4 +1,7 @@
-use std::path::Path;
+use std::{
+    collections::HashSet,
+    path::{Path, PathBuf},
+};
 
 use gen_lsp_types::{ClientCapabilities, Uri, WorkspaceFolder};
 use miette::Result;
@@ -13,6 +16,7 @@ pub struct ServerState {
     pub config: Config,
     workspace_roots: Vec<Uri>,
     client_capabilities: Option<ClientCapabilities>,
+    open_documents: HashSet<PathBuf>,
 }
 
 impl ServerState {
@@ -33,6 +37,18 @@ impl ServerState {
 
     pub fn set_client_capabilities(&mut self, capabilities: ClientCapabilities) {
         self.client_capabilities = Some(capabilities);
+    }
+
+    pub fn open_document(&mut self, path: PathBuf) {
+        self.open_documents.insert(path);
+    }
+
+    pub fn close_document(&mut self, path: &Path) {
+        self.open_documents.remove(path);
+    }
+
+    pub fn is_document_open(&self, path: &Path) -> bool {
+        self.open_documents.contains(path)
     }
 
     /// Returns the "primary" root (the first one opened), if any.

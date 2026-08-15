@@ -50,9 +50,68 @@ pub fn process_hover(lsp: &mut ServerState, params: HoverParams) -> Result<Optio
             }))
         }
         Some(Reference::Header(_)) => Ok(None),
+        Some(Reference::FootnoteDef(_)) => Ok(None),
+        Some(Reference::FootnoteRef(footnote_ref)) => {
+            let identifier = footnote_ref.identifier_str(&document.source);
+
+            let Some(def) = document.find_footnote_definition(&identifier) else {
+                return Ok(None);
+            };
+
+            let content = def.content_str(&document.source);
+            let range = document
+                .source
+                .slice(..)
+                .byte_to_lsp_range(footnote_ref.span);
+
+            Ok(Some(Hover {
+                contents: Contents::MarkupContent(MarkupContent {
+                    kind: MarkupKind::Markdown,
+                    value: content.to_string(),
+                }),
+                range: Some(range),
+            }))
+        }
         None => {
             debug!("No reference found at position {:?}", position);
             Ok(None)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use gen_lsp_types::{
+        Contents, Position, TextDocumentIdentifier, TextDocumentPositionParams,
+        WorkDoneProgressParams,
+    };
+
+    use super::*;
+    use crate::test_utils::TestWorkspace;
+
+    #[test]
+    fn hovers_footnote_reference_with_definition_content() {
+        let mut ws = TestWorkspace::new();
+        ws.add_file(
+            "/workspace/notes.md",
+            1,
+            "See[^note] here\n\n[^note]: the footnote text",
+        );
+
+        let params = HoverParams {
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: "file:///workspace/notes.md".parse().unwrap(),
+                },
+                position: Position::new(0, 5),
+            },
+        };
+
+        let result = process_hover(&mut ws.state, params).unwrap().unwrap();
+        let Contents::MarkupContent(content) = result.contents else {
+            panic!("expected markup content");
+        };
+        assert_eq!(content.value, "the footnote text");
     }
 }

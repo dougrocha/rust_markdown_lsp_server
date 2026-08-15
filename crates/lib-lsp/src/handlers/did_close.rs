@@ -13,7 +13,7 @@ pub fn process_did_close(lsp: &mut ServerState, params: DidCloseTextDocumentPara
         .to_file_path()
         .ok_or_else(|| miette!("Invalid URI: {}", uri.as_ref()))?;
 
-    lsp.documents.close_document(&path);
+    lsp.close_document(&path);
 
     Ok(())
 }

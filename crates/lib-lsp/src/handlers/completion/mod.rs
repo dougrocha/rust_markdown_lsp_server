@@ -32,7 +32,8 @@ struct LinkContext {
 enum CompletionIntent<'a> {
     Document(LinkContext),
     Header(HeaderContext<'a>),
-    Footnote,
+    Footnote { is_incomplete: bool },
+    Tag,
 }
 
 impl CompletionIntent<'_> {
@@ -44,13 +45,19 @@ impl CompletionIntent<'_> {
                 .get_byte_slice(byte_pos.saturating_sub(2)..byte_pos)
                 .map(|s| s.as_str())?;
 
-            if let Some(trigger) = trigger
-                && let Some(link_type) = LinkType::detect(trigger)
-            {
-                return Some(CompletionIntent::Document(LinkContext {
-                    link_type,
-                    is_incomplete: !has_closing_chars(document, byte_pos, link_type),
-                }));
+            if let Some(trigger) = trigger {
+                if trigger == "[^" {
+                    return Some(CompletionIntent::Footnote {
+                        is_incomplete: !has_closing_bracket(document, byte_pos),
+                    });
+                }
+
+                if let Some(link_type) = LinkType::detect(trigger) {
+                    return Some(CompletionIntent::Document(LinkContext {
+                        link_type,
+                        is_incomplete: !has_closing_chars(document, byte_pos, link_type),
+                    }));
+                }
             }
         }
 
@@ -62,19 +69,39 @@ impl CompletionIntent<'_> {
             if let Some(trigger) = trigger
                 && trigger == "#"
             {
-                let (file_path, link_type) =
-                    extract_file_and_link_type_from_context(document, byte_pos.saturating_sub(1))?;
+                let hash_pos = byte_pos.saturating_sub(1);
 
-                return Some(CompletionIntent::Header(HeaderContext {
-                    file_path,
-                    link_type,
-                    is_incomplete: !has_closing_chars(document, byte_pos, link_type),
-                }));
+                if let Some((file_path, link_type)) =
+                    extract_file_and_link_type_from_context(document, hash_pos)
+                {
+                    return Some(CompletionIntent::Header(HeaderContext {
+                        file_path,
+                        link_type,
+                        is_incomplete: !has_closing_chars(document, byte_pos, link_type),
+                    }));
+                }
+
+                if !is_start_of_line(document, hash_pos) {
+                    return Some(CompletionIntent::Tag);
+                }
             }
         }
 
         None
     }
+}
+
+/// Returns true if `byte_pos` is the first non-whitespace character on its
+/// line (i.e. this is likely a heading marker, not an inline tag).
+fn is_start_of_line(document: &Document, byte_pos: usize) -> bool {
+    let slice = document.source.slice(..);
+    let line_start = slice.byte_offset_to_position(byte_pos).line;
+    let line_start_byte = slice.position_to_byte_offset(Position::new(line_start, 0));
+
+    slice
+        .get_byte_slice(line_start_byte..byte_pos)
+        .map(|s| s.chars().all(|c| c == ' ' || c == '\t'))
+        .unwrap_or(false)
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -153,7 +180,7 @@ fn handle_invoked_completion(
     let slice = document.source.slice(..);
     let byte_pos = slice.position_to_byte_offset(position);
 
-    let (anchor_idx, anchor_char) = find_byte_backwards_any(&slice, byte_pos, b"[(#:\n")?;
+    let (anchor_idx, anchor_char) = find_byte_backwards_any(&slice, byte_pos, b"[(#:^\n")?;
 
     if anchor_char == b'\n' {
         return None;
@@ -183,11 +210,62 @@ fn handle_trigger_completion(
     match intent {
         CompletionIntent::Document(ctx) => complete_document_links(lsp, document, ctx),
         CompletionIntent::Header(ctx) => complete_headers(lsp, document, ctx),
-        CompletionIntent::Footnote => {
-            // do nothing
-            None
+        CompletionIntent::Footnote { is_incomplete } => {
+            complete_footnotes(document, is_incomplete)
         }
+        CompletionIntent::Tag => complete_tags(lsp),
     }
+}
+
+fn complete_tags(lsp: &ServerState) -> Option<Vec<CompletionItem>> {
+    let mut names: Vec<String> = lsp
+        .documents
+        .iter()
+        .flat_map(|doc| doc.tags().map(|tag| tag.name_str(&doc.source).to_string()))
+        .collect();
+
+    names.sort_unstable();
+    names.dedup();
+
+    let completions = names
+        .into_iter()
+        .map(|name| CompletionItem {
+            label: name.clone(),
+            kind: Some(CompletionItemKind::Constant),
+            detail: Some("Tag".to_owned()),
+            insert_text: Some(name),
+            ..Default::default()
+        })
+        .collect();
+
+    Some(completions)
+}
+
+fn complete_footnotes(document: &Document, is_incomplete: bool) -> Option<Vec<CompletionItem>> {
+    let completions = document
+        .footnote_definitions()
+        .map(|def| {
+            let identifier = def.identifier_str(&document.source);
+            let content = def.content_str(&document.source);
+
+            let insert_text = if is_incomplete {
+                format!("{identifier}]")
+            } else {
+                identifier.to_string()
+            };
+
+            CompletionItem {
+                label: identifier.to_string(),
+                kind: Some(CompletionItemKind::Reference),
+                detail: Some("Footnote".to_owned()),
+                documentation: Some(Documentation::String(content.to_string())),
+                insert_text: Some(insert_text),
+                ..Default::default()
+            }
+        })
+        .collect();
+
+    Some(completions)
 }
 
 fn complete_document_links(
@@ -200,6 +278,10 @@ fn complete_document_links(
     let source_root = lsp.get_workspace_root_for_path(&document.path);
 
     for doc in lsp.documents.iter() {
+        if doc.path == document.path {
+            continue;
+        }
+
         let Some(source_uri) = Uri::from_file_path(&document.path) else {
             continue;
         };
@@ -300,6 +382,19 @@ fn complete_headers(
     }
 
     Some(completions)
+}
+
+fn has_closing_bracket(document: &Document, byte_pos: usize) -> bool {
+    let slice = document.source.slice(..);
+
+    if document.get_reference_at_offset(byte_pos).is_some() {
+        return true;
+    }
+
+    slice
+        .get_byte_slice(byte_pos..byte_pos.saturating_add(1))
+        .map(|s| s == "]")
+        .unwrap_or(false)
 }
 
 fn has_closing_chars(document: &Document, byte_pos: usize, link_type: LinkType) -> bool {
@@ -411,5 +506,122 @@ mod tests {
         assert_eq!(items.len(), 2);
         assert_eq!(items[0].label, "First Header");
         assert_eq!(items[1].label, "Second Header");
+    }
+
+    #[test]
+    fn document_link_completion_excludes_current_document() {
+        let mut ws = TestWorkspace::new();
+        ws.add_file("/workspace/notes.md", 1, "[[")
+            .add_file("/workspace/other.md", 1, "content");
+
+        let params = CompletionParams {
+            context: Some(CompletionContext {
+                trigger_kind: CompletionTriggerKind::TriggerCharacter,
+                trigger_character: Some("[".to_string()),
+            }),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: "file:///workspace/notes.md".parse().unwrap(),
+                },
+                position: Position::new(0, 2),
+            },
+        };
+
+        let response = process_completion(&mut ws.state, params).unwrap().unwrap();
+        let CompletionResponse::CompletionItemList(items) = response else {
+            panic!("expected a completion item list");
+        };
+
+        assert_eq!(items.len(), 1);
+        assert!(items.iter().all(|item| item.label != "notes"));
+    }
+
+    #[test]
+    fn footnote_completion_after_caret() {
+        let mut ws = TestWorkspace::new();
+        ws.add_file(
+            "/workspace/notes.md",
+            1,
+            "See[^\n\n[^one]: first\n[^two]: second",
+        );
+
+        let params = CompletionParams {
+            context: Some(CompletionContext {
+                trigger_kind: CompletionTriggerKind::TriggerCharacter,
+                trigger_character: Some("^".to_string()),
+            }),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: "file:///workspace/notes.md".parse().unwrap(),
+                },
+                position: Position::new(0, 5),
+            },
+        };
+
+        let response = process_completion(&mut ws.state, params).unwrap().unwrap();
+        let CompletionResponse::CompletionItemList(items) = response else {
+            panic!("expected a completion item list");
+        };
+
+        let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
+        assert_eq!(labels, vec!["one", "two"]);
+    }
+
+    #[test]
+    fn tag_completion_after_hash_lists_workspace_tags() {
+        let mut ws = TestWorkspace::new();
+        ws.add_file("/workspace/notes.md", 1, "today I worked on #")
+            .add_file("/workspace/other.md", 1, "some #project/backend work");
+
+        let params = CompletionParams {
+            context: Some(CompletionContext {
+                trigger_kind: CompletionTriggerKind::TriggerCharacter,
+                trigger_character: Some("#".to_string()),
+            }),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: "file:///workspace/notes.md".parse().unwrap(),
+                },
+                position: Position::new(0, 19),
+            },
+        };
+
+        let response = process_completion(&mut ws.state, params).unwrap().unwrap();
+        let CompletionResponse::CompletionItemList(items) = response else {
+            panic!("expected a completion item list");
+        };
+
+        let labels: Vec<&str> = items.iter().map(|item| item.label.as_str()).collect();
+        assert_eq!(labels, vec!["project/backend"]);
+    }
+
+    #[test]
+    fn hash_at_start_of_line_does_not_trigger_tag_completion() {
+        let mut ws = TestWorkspace::new();
+        ws.add_file("/workspace/notes.md", 1, "#");
+
+        let params = CompletionParams {
+            context: Some(CompletionContext {
+                trigger_kind: CompletionTriggerKind::TriggerCharacter,
+                trigger_character: Some("#".to_string()),
+            }),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: "file:///workspace/notes.md".parse().unwrap(),
+                },
+                position: Position::new(0, 1),
+            },
+        };
+
+        let response = process_completion(&mut ws.state, params).unwrap();
+        assert!(response.is_none());
     }
 }

@@ -116,4 +116,45 @@ mod tests {
         assert_eq!(locations.len(), 1);
         assert_eq!(locations[0].uri.to_string(), "file:///workspace/a.md");
     }
+
+    #[test]
+    fn finds_references_from_footnote_definition() {
+        let mut ws = TestWorkspace::new();
+        ws.add_file(
+            "/workspace/notes.md",
+            1,
+            "See[^note] and also[^note] again\n\n[^note]: the footnote text",
+        );
+
+        // cursor on the "[^note]:" definition line
+        let locations = process_references(
+            &mut ws.state,
+            params("file:///workspace/notes.md", 2, 3, false),
+        )
+        .unwrap()
+        .unwrap();
+
+        assert_eq!(locations.len(), 2);
+    }
+
+    #[test]
+    fn finds_references_from_footnote_reference() {
+        let mut ws = TestWorkspace::new();
+        ws.add_file(
+            "/workspace/notes.md",
+            1,
+            "See[^note] and also[^note] again\n\n[^note]: the footnote text",
+        );
+
+        // cursor on the first `[^note]` inline reference
+        let locations = process_references(
+            &mut ws.state,
+            params("file:///workspace/notes.md", 0, 5, true),
+        )
+        .unwrap()
+        .unwrap();
+
+        // the second inline reference + the definition, plus the declaration itself
+        assert_eq!(locations.len(), 3);
+    }
 }

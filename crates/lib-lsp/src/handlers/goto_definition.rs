@@ -49,6 +49,26 @@ pub fn process_goto_definition(
             ))))
         }
         Reference::Header(_) => Ok(None),
+        Reference::FootnoteDef(_) => Ok(None),
+        Reference::FootnoteRef(footnote_ref) => {
+            let identifier = footnote_ref.identifier_str(&document.source);
+
+            let Some(def) = document.find_footnote_definition(&identifier) else {
+                return Ok(None);
+            };
+
+            let range = document.source.slice(..).byte_to_lsp_range(def.span);
+
+            let target_uri = UriExt::from_file_path(&document.path)
+                .ok_or_else(|| miette!("Failed to convert path to URI: {:?}", document.path))?;
+
+            Ok(Some(DefinitionResponse::Definition(Definition::Location(
+                Location {
+                    uri: target_uri,
+                    range,
+                },
+            ))))
+        }
     }
 }
 
@@ -156,6 +176,27 @@ mod tests {
             panic!("expected a location");
         };
         assert_eq!(loc.uri.to_string(), "file:///workspace/target.md");
+        assert_eq!(loc.range.start.line, 2);
+    }
+
+    #[test]
+    fn goes_to_footnote_definition() {
+        let mut ws = TestWorkspace::new();
+        ws.add_file(
+            "/workspace/notes.md",
+            1,
+            "See[^note] here\n\n[^note]: the footnote text",
+        );
+
+        let result =
+            process_goto_definition(&mut ws.state, params("file:///workspace/notes.md", 0, 5))
+                .unwrap()
+                .unwrap();
+
+        let DefinitionResponse::Definition(Definition::Location(loc)) = result else {
+            panic!("expected a location");
+        };
+        assert_eq!(loc.uri.to_string(), "file:///workspace/notes.md");
         assert_eq!(loc.range.start.line, 2);
     }
 }

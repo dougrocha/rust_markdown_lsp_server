@@ -1,6 +1,6 @@
 use std::borrow::Cow;
 
-use lib_parser::new_markdown::Span;
+use lib_parser::markdown::Span;
 use ropey::Rope;
 
 #[derive(Debug, Clone)]
@@ -22,6 +22,23 @@ impl Header {
 }
 
 #[derive(Debug, Clone)]
+pub struct Tag {
+    pub span: Span,
+    pub name_span: Span,
+}
+
+impl Tag {
+    /// Gets the tag's name (without the leading `#`) from source
+    ///
+    /// Returns Cow, as memory may not be together in Rope
+    pub fn name_str<'a>(&self, source: &'a Rope) -> Cow<'a, str> {
+        source
+            .byte_slice(self.name_span.start..self.name_span.end)
+            .into()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub enum LinkKind {
     Wiki {
         target: Span,
@@ -33,6 +50,10 @@ pub enum LinkKind {
         url: Span,
         header: Option<Span>,
         title: Option<Span>,
+    },
+    Image {
+        alt: Span,
+        url: Span,
     },
 }
 
@@ -47,6 +68,7 @@ impl Link {
         match &self.kind {
             LinkKind::Wiki { header, .. } => *header,
             LinkKind::Inline { header, .. } => *header,
+            LinkKind::Image { .. } => None,
         }
     }
 
@@ -57,6 +79,7 @@ impl Link {
         match &self.kind {
             LinkKind::Wiki { target, .. } => source.byte_slice(target.start..target.end).into(),
             LinkKind::Inline { url, .. } => source.byte_slice(url.start..url.end).into(),
+            LinkKind::Image { url, .. } => source.byte_slice(url.start..url.end).into(),
         }
     }
 
@@ -76,7 +99,7 @@ impl Link {
             LinkKind::Wiki { alias, .. } => {
                 alias.map(|s| source.byte_slice(s.start..s.end).into())
             }
-            LinkKind::Inline { .. } => None,
+            LinkKind::Inline { .. } | LinkKind::Image { .. } => None,
         }
     }
 
@@ -88,6 +111,7 @@ impl Link {
             LinkKind::Inline { label, .. } => {
                 Some(source.byte_slice(label.start..label.end).into())
             }
+            LinkKind::Image { alt, .. } => Some(source.byte_slice(alt.start..alt.end).into()),
             LinkKind::Wiki { .. } => None,
         }
     }
@@ -110,16 +134,67 @@ impl Link {
                 let label = self.label_str(source).unwrap_or_default();
                 format!("[{label}]({path})")
             }
+            LinkKind::Image { .. } => {
+                let alt = self.label_str(source).unwrap_or_default();
+                format!("![{alt}]({path})")
+            }
         }
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct FootnoteDefinition {
+    pub span: Span,
+    pub identifier: Span,
+    pub content_span: Span,
+}
+
+impl FootnoteDefinition {
+    /// Gets the footnote identifier's text content from source
+    ///
+    /// Returns Cow, as memory may not be together in Rope
+    pub fn identifier_str<'a>(&self, source: &'a Rope) -> Cow<'a, str> {
+        source
+            .byte_slice(self.identifier.start..self.identifier.end)
+            .into()
+    }
+
+    /// Gets the footnote's content text from source
+    ///
+    /// Returns Cow, as memory may not be together in Rope
+    pub fn content_str<'a>(&self, source: &'a Rope) -> Cow<'a, str> {
+        source
+            .byte_slice(self.content_span.start..self.content_span.end)
+            .into()
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct FootnoteReference {
+    pub span: Span,
+    pub identifier: Span,
+}
+
+impl FootnoteReference {
+    /// Gets the footnote identifier's text content from source
+    ///
+    /// Returns Cow, as memory may not be together in Rope
+    pub fn identifier_str<'a>(&self, source: &'a Rope) -> Cow<'a, str> {
+        source
+            .byte_slice(self.identifier.start..self.identifier.end)
+            .into()
+    }
+}
+
+#[derive(Debug, Clone)]
 pub struct Diagnostic {
     pub span: Span,
     pub severity: Severity,
     pub code: DiagnosticCode,
+    pub message: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum Severity {
     Error,
     Warning,
@@ -127,8 +202,10 @@ pub enum Severity {
     Hint,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq)]
 pub enum DiagnosticCode {
     BrokenWikilink,
     BrokenInlineLink,
     MissingFrontmatterField,
+    MalformedTag,
 }

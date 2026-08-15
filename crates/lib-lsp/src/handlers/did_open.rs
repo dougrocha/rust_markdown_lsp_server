@@ -18,6 +18,7 @@ pub fn process_did_open(lsp: &mut ServerState, params: DidOpenTextDocumentParams
         params.text_document.version,
         &params.text_document.text,
     )?;
+    lsp.open_document(path.into_owned());
 
     Ok(())
 }

@@ -64,6 +64,16 @@ pub enum BlockKind {
         kind: ListType,
         children: Vec<Block>,
     },
+    ListItem {
+        checked: Option<bool>,
+        inline: Vec<Inline>,
+        children: Vec<Block>,
+    },
+    Frontmatter,
+    FootnoteDefinition {
+        identifier: Span,
+        children: Vec<Inline>,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -91,12 +101,19 @@ pub enum InlineKind {
         children: Vec<Inline>,
         url_span: Span,
     },
+    Image {
+        alt_span: Span,
+        url_span: Span,
+    },
     Wikilink {
         target_span: Span,
         children: Option<Vec<Inline>>,
     },
     Footnote {
         identifier: Span,
+    },
+    Tag {
+        name: Span,
     },
 }
 
@@ -210,6 +227,21 @@ impl<'src> Cursor<'src> {
         let trimmed = self.src[self.pos..].trim_start_matches('#');
         !trimmed.is_empty() && trimmed.starts_with(' ')
     }
+
+    /// Number of leading ASCII spaces from the current position.
+    fn leading_spaces(&self) -> usize {
+        self.src[self.pos..]
+            .chars()
+            .take_while(|&c| c == ' ')
+            .count()
+    }
+
+    /// The rest of the current line (not including the newline).
+    fn rest_of_line(&self) -> &'src str {
+        let rest = &self.src[self.pos..];
+        let end = rest.find('\n').unwrap_or(rest.len());
+        &rest[..end]
+    }
 }
 
 pub struct Parser<'src> {
@@ -226,6 +258,10 @@ impl<'src> Parser<'src> {
     pub fn parse(mut self) -> Vec<Block> {
         let mut blocks = Vec::new();
 
+        if let Some(frontmatter) = self.try_parse_frontmatter() {
+            blocks.push(frontmatter);
+        }
+
         while !self.cursor.is_eof() {
             if self.cursor.consume_if(|c| c == '\n') {
                 continue;
@@ -237,11 +273,215 @@ impl<'src> Parser<'src> {
         blocks
     }
 
+    /// Recognizes a leading YAML frontmatter block: `---`, a body, then a
+    /// closing `---` line. Only valid at the very start of the document.
+    fn try_parse_frontmatter(&mut self) -> Option<Block> {
+        let src = self.cursor.src;
+        if self.cursor.pos != 0 || !src.starts_with("---\n") {
+            return None;
+        }
+
+        let mut search_pos = 4; // past "---\n"
+        loop {
+            let rest = &src[search_pos..];
+            let line_end = rest.find('\n').map_or(src.len(), |i| search_pos + i);
+            let line = &src[search_pos..line_end];
+
+            if line == "---" {
+                let total_end = if line_end < src.len() {
+                    line_end + 1
+                } else {
+                    line_end
+                };
+                self.cursor.pos = total_end;
+                return Some(Block {
+                    kind: BlockKind::Frontmatter,
+                    span: Span::new(0, total_end),
+                });
+            }
+
+            if line_end >= src.len() {
+                return None; // no closing delimiter found
+            }
+            search_pos = line_end + 1;
+        }
+    }
+
     fn parse_block(&mut self) -> Block {
+        let indent = self.cursor.leading_spaces();
+        let line_after_indent = &self.cursor.rest_of_line()[indent..];
+
         match self.cursor.peek() {
-            Some('#') => self.parse_heading(),
+            Some('#') if self.cursor.is_heading() => self.parse_heading(),
+            Some(_) if Self::match_footnote_definition_marker(self.cursor.rest_of_line()).is_some() => {
+                self.parse_footnote_definition()
+            }
+            Some(_) if Self::match_list_marker(line_after_indent).is_some() => {
+                self.parse_list(indent)
+            }
             Some(_) => self.parse_paragraph(),
             None => unreachable!("parse_block called at EOF; caller must check is_eof() first"),
+        }
+    }
+
+    /// Recognizes a footnote definition marker (`[^id]:`) at the start of
+    /// `line`. Returns the identifier's byte range within `line` and the
+    /// byte length of the full marker (including the trailing `:`).
+    fn match_footnote_definition_marker(line: &str) -> Option<(std::ops::Range<usize>, usize)> {
+        let rest = line.strip_prefix("[^")?;
+        let ident_len = rest.find(']')?;
+        let ident = &rest[..ident_len];
+        if ident.is_empty() || ident.chars().any(|c| c.is_whitespace()) {
+            return None;
+        }
+        if !rest[ident_len..].starts_with("]:") {
+            return None;
+        }
+        Some((2..2 + ident_len, 2 + ident_len + 2))
+    }
+
+    fn parse_footnote_definition(&mut self) -> Block {
+        let start = self.cursor.pos;
+        let (ident_range, marker_len) =
+            Self::match_footnote_definition_marker(self.cursor.rest_of_line())
+                .expect("caller verified marker presence");
+
+        let identifier = Span::new(
+            self.cursor.abs_pos() + ident_range.start,
+            self.cursor.abs_pos() + ident_range.end,
+        );
+        for _ in 0..marker_len {
+            self.cursor.next();
+        }
+        self.cursor.consume_while(|c| c == ' ');
+
+        let inline_span = Span::new(
+            self.cursor.abs_pos(),
+            self.cursor.consume_while(|c| c != '\n').end,
+        );
+        let children = self.parse_inline(inline_span);
+
+        self.cursor.consume_if(|c| c == '\n');
+
+        Block {
+            kind: BlockKind::FootnoteDefinition {
+                identifier,
+                children,
+            },
+            span: Span::new(start, self.cursor.pos),
+        }
+    }
+
+    /// Recognizes a list marker at the start of `line` (with any leading
+    /// indentation already stripped). Returns the list type and the byte
+    /// length of the marker (including the trailing space).
+    fn match_list_marker(line: &str) -> Option<(ListType, usize)> {
+        for marker in ["- ", "* ", "+ "] {
+            if line.starts_with(marker) {
+                return Some((ListType::Unordered, marker.len()));
+            }
+        }
+
+        let digits = line.chars().take_while(|c| c.is_ascii_digit()).count();
+        if digits == 0 {
+            return None;
+        }
+        let rest = &line[digits..];
+        if rest.starts_with(". ") || rest.starts_with(") ") {
+            return Some((ListType::Ordered, digits + 2));
+        }
+
+        None
+    }
+
+    fn parse_list(&mut self, indent: usize) -> Block {
+        let start = self.cursor.pos;
+        let mut items = Vec::new();
+        let mut list_type = None;
+
+        loop {
+            if self.cursor.is_eof() {
+                break;
+            }
+
+            let cur_indent = self.cursor.leading_spaces();
+            if cur_indent != indent {
+                break;
+            }
+
+            let line = &self.cursor.rest_of_line()[cur_indent..];
+            let Some((kind, _)) = Self::match_list_marker(line) else {
+                break;
+            };
+
+            if let Some(expected) = &list_type {
+                if *expected != kind {
+                    break;
+                }
+            } else {
+                list_type = Some(kind);
+            }
+
+            items.push(self.parse_list_item(indent));
+        }
+
+        Block {
+            kind: BlockKind::List {
+                kind: list_type.unwrap_or(ListType::Unordered),
+                children: items,
+            },
+            span: Span::new(start, self.cursor.pos),
+        }
+    }
+
+    fn parse_list_item(&mut self, indent: usize) -> Block {
+        let start = self.cursor.pos;
+
+        self.cursor.consume_while(|c| c == ' '); // indentation
+        let (_, marker_len) = Self::match_list_marker(self.cursor.rest_of_line())
+            .expect("caller verified marker presence");
+        for _ in 0..marker_len {
+            self.cursor.next();
+        }
+
+        let checked = if self.cursor.starts_with("[ ] ") {
+            for _ in 0.."[ ] ".len() {
+                self.cursor.next();
+            }
+            Some(false)
+        } else if self.cursor.starts_with("[x] ") || self.cursor.starts_with("[X] ") {
+            for _ in 0.."[x] ".len() {
+                self.cursor.next();
+            }
+            Some(true)
+        } else {
+            None
+        };
+
+        let inline_span = Span::new(
+            self.cursor.abs_pos(),
+            self.cursor.consume_while(|c| c != '\n').end,
+        );
+        let inline = self.parse_inline(inline_span);
+
+        self.cursor.consume_if(|c| c == '\n');
+
+        let mut children = Vec::new();
+        if !self.cursor.is_eof() {
+            let nested_indent = self.cursor.leading_spaces();
+            let nested_line = &self.cursor.rest_of_line()[nested_indent..];
+            if nested_indent > indent && Self::match_list_marker(nested_line).is_some() {
+                children.push(self.parse_list(nested_indent));
+            }
+        }
+
+        Block {
+            kind: BlockKind::ListItem {
+                checked,
+                inline,
+                children,
+            },
+            span: Span::new(start, self.cursor.pos),
         }
     }
 
@@ -289,9 +529,19 @@ impl<'src> Parser<'src> {
 
             let next = self.cursor.peek();
 
+            let indent = self.cursor.leading_spaces();
+            let line_after_indent = &self.cursor.rest_of_line()[indent..];
+
             match next {
                 None | Some('\n') => break,
                 Some(_) if self.cursor.is_heading() => break,
+                Some(_) if Self::match_list_marker(line_after_indent).is_some() => break,
+                Some(_)
+                    if Self::match_footnote_definition_marker(self.cursor.rest_of_line())
+                        .is_some() =>
+                {
+                    break;
+                }
 
                 // continuation line — keep accumulating
                 Some(_) => continue,
@@ -366,6 +616,12 @@ impl<'src> Parser<'src> {
     ) -> Option<(InlineKind, Span)> {
         let src = self.cursor.src;
 
+        if cursor.starts_with("![") {
+            let (alt_span, url_span, total_span) = Self::try_parse_image(&src[..span.end], abs)?;
+
+            return Some((InlineKind::Image { alt_span, url_span }, total_span));
+        }
+
         if cursor.starts_with("[[") {
             let line_end = cursor.find_abs('\n').unwrap_or(span.end);
             let (target_span, alias_span, total_span) =
@@ -379,6 +635,12 @@ impl<'src> Parser<'src> {
                 },
                 total_span,
             ));
+        }
+
+        if cursor.starts_with("#") {
+            let (name_span, total_span) = Self::try_parse_tag(src, abs)?;
+
+            return Some((InlineKind::Tag { name: name_span }, total_span));
         }
 
         if cursor.starts_with("[^") {
@@ -406,14 +668,6 @@ impl<'src> Parser<'src> {
                 },
                 total_span,
             ));
-        }
-
-        if cursor.starts_with("[") {
-            let (children_span, url_span, total_span) =
-                Self::try_parse_link(&src[..span.end], abs)?;
-            let children = self.parse_inline(children_span);
-
-            return Some((InlineKind::Link { children, url_span }, total_span));
         }
 
         // Bold-italic must be checked before bold (longer prefix wins).
@@ -526,6 +780,19 @@ impl<'src> Parser<'src> {
         Some((children_span, url_span, total_span))
     }
 
+    /// Try to extract an image (`![alt](url)`).
+    ///
+    /// # Returns
+    ///
+    /// `Some((alt_span, url_span, total_span))` on success, `None` otherwise.
+    fn try_parse_image(src: &str, pos: usize) -> Option<(Span, Span, Span)> {
+        if !src[pos..].starts_with('!') {
+            return None;
+        }
+        let (alt_span, url_span, link_span) = Self::try_parse_link(src, pos + 1)?;
+        Some((alt_span, url_span, Span::new(pos, link_span.end)))
+    }
+
     fn try_parse_delimited(src: &str, pos: usize, delim: &str) -> Option<(Span, Span)> {
         if !src[pos..].starts_with(delim) {
             return None;
@@ -578,14 +845,15 @@ impl<'src> Parser<'src> {
 
     fn try_parse_footnote(src: &str, pos: usize) -> Option<(Span, Span)> {
         let ident_start = pos + 2;
-        let ident_end = src[2..].find(']').map(|i| ident_start + i)?;
+        let rest = src.get(ident_start..)?;
+        let ident_end = rest.find(']').map(|i| ident_start + i)?;
 
         if ident_start == ident_end {
             return None;
         }
 
         if src
-            .get(2..ident_end - pos)?
+            .get(ident_start..ident_end)?
             .chars()
             .any(|c| c.is_ascii_whitespace())
         {
@@ -596,6 +864,29 @@ impl<'src> Parser<'src> {
             Span::new(ident_start, ident_end),
             Span::new(pos, ident_end + 1),
         ))
+    }
+
+    /// Try to extract a `#tag` at `pos`.
+    ///
+    /// # Returns
+    ///
+    /// `Some((name_span, total_span))` where `name_span` excludes the
+    /// leading `#`. Returns `None` when no valid tag is found.
+    fn try_parse_tag(src: &str, pos: usize) -> Option<(Span, Span)> {
+        let rest = &src[pos + 1..];
+        let first = rest.chars().next()?;
+        if !(first.is_alphanumeric() || first == '_') {
+            return None;
+        }
+
+        let len: usize = rest
+            .chars()
+            .take_while(|&c| c.is_alphanumeric() || c == '_' || c == '-' || c == '/')
+            .map(|c| c.len_utf8())
+            .sum();
+
+        let name_span = Span::new(pos + 1, pos + 1 + len);
+        Some((name_span, Span::new(pos, pos + 1 + len)))
     }
 }
 
@@ -1080,10 +1371,22 @@ mod tests {
 
         let expected = vec![Block {
             kind: BlockKind::Paragraph {
-                children: vec![Inline {
-                    kind: InlineKind::Text,
-                    span: Span::new(0, 15),
-                }],
+                children: vec![
+                    Inline {
+                        kind: InlineKind::Text,
+                        span: Span::new(0, 4),
+                    },
+                    Inline {
+                        kind: InlineKind::Footnote {
+                            identifier: Span::new(6, 9),
+                        },
+                        span: Span::new(4, 10),
+                    },
+                    Inline {
+                        kind: InlineKind::Text,
+                        span: Span::new(10, 15),
+                    },
+                ],
             },
             span: Span::new(0, 15),
         }];
@@ -1299,6 +1602,312 @@ mod tests {
         }];
 
         assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_frontmatter() {
+        let input = "---\ntitle: Hello\n---\n# Heading";
+        let result = Parser::new(input).parse();
+
+        assert_eq!(result.len(), 2);
+        assert_eq!(result[0].kind, BlockKind::Frontmatter);
+        assert_eq!(result[0].span, Span::new(0, 21));
+        assert!(matches!(result[1].kind, BlockKind::Heading { .. }));
+    }
+
+    #[test]
+    fn frontmatter_only_recognized_at_start() {
+        let input = "text\n---\ntitle: Hello\n---\n";
+        let result = Parser::new(input).parse();
+
+        assert!(
+            result
+                .iter()
+                .all(|b| !matches!(b.kind, BlockKind::Frontmatter))
+        );
+    }
+
+    #[test]
+    fn unclosed_frontmatter_is_not_frontmatter() {
+        let input = "---\ntitle: Hello\n";
+        let result = Parser::new(input).parse();
+
+        assert!(
+            result
+                .iter()
+                .all(|b| !matches!(b.kind, BlockKind::Frontmatter))
+        );
+    }
+
+    #[test]
+    fn parse_tag() {
+        let input = "hello #project world";
+        let result = Parser::new(input).parse();
+
+        let BlockKind::Paragraph { children } = &result[0].kind else {
+            panic!("expected Paragraph");
+        };
+        assert_eq!(children.len(), 3);
+        let InlineKind::Tag { name } = &children[1].kind else {
+            panic!("expected Tag");
+        };
+        assert_eq!(name.as_str(input), "project");
+        assert_eq!(children[1].span.as_str(input), "#project");
+    }
+
+    #[test]
+    fn parse_tag_with_slash_and_dash() {
+        let input = "#area/sub-topic more";
+        let result = Parser::new(input).parse();
+
+        let BlockKind::Paragraph { children } = &result[0].kind else {
+            panic!("expected Paragraph");
+        };
+        let InlineKind::Tag { name } = &children[0].kind else {
+            panic!("expected Tag");
+        };
+        assert_eq!(name.as_str(input), "area/sub-topic");
+    }
+
+    #[test]
+    fn heading_marker_is_not_a_tag() {
+        let input = "# Heading";
+        let result = Parser::new(input).parse();
+        assert!(matches!(result[0].kind, BlockKind::Heading { .. }));
+    }
+
+    #[test]
+    fn bare_hash_without_word_char_is_text() {
+        let input = "just a # sign";
+        let result = Parser::new(input).parse();
+
+        let BlockKind::Paragraph { children } = &result[0].kind else {
+            panic!("expected Paragraph");
+        };
+        assert_eq!(children.len(), 1);
+        assert!(matches!(children[0].kind, InlineKind::Text));
+    }
+
+    #[test]
+    fn parse_image() {
+        let input = "![alt text](image.png)";
+        let result = Parser::new(input).parse();
+
+        let expected = vec![Block {
+            span: Span::new(0, 22),
+            kind: BlockKind::Paragraph {
+                children: vec![Inline {
+                    span: Span::new(0, 22),
+                    kind: InlineKind::Image {
+                        alt_span: Span::new(2, 10),
+                        url_span: Span::new(12, 21),
+                    },
+                }],
+            },
+        }];
+
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn parse_image_mid_string() {
+        let input = "see ![alt](img.png) here";
+        let result = Parser::new(input).parse();
+
+        let BlockKind::Paragraph { children } = &result[0].kind else {
+            panic!("expected Paragraph");
+        };
+        assert_eq!(children.len(), 3);
+        assert!(matches!(children[1].kind, InlineKind::Image { .. }));
+        assert_eq!(children[1].span.as_str(input), "![alt](img.png)");
+    }
+
+    #[test]
+    fn image_does_not_conflict_with_link() {
+        let input = "[text](url) ![alt](img.png)";
+        let result = Parser::new(input).parse();
+
+        let BlockKind::Paragraph { children } = &result[0].kind else {
+            panic!("expected Paragraph");
+        };
+        assert!(matches!(children[0].kind, InlineKind::Link { .. }));
+        assert!(matches!(children[2].kind, InlineKind::Image { .. }));
+    }
+
+    #[test]
+    fn try_parse_image_basic() {
+        let input = "![alt](img.png)";
+        let result = Parser::try_parse_image(input, 0);
+
+        assert_eq!(
+            result,
+            Some((Span::new(2, 5), Span::new(7, 14), Span::new(0, 15)))
+        );
+    }
+
+    #[test]
+    fn parse_footnote_definition() {
+        let input = "[^note]: this is the note";
+        let result = Parser::new(input).parse();
+
+        assert_eq!(result.len(), 1);
+        let BlockKind::FootnoteDefinition {
+            identifier,
+            children,
+        } = &result[0].kind
+        else {
+            panic!("expected FootnoteDefinition");
+        };
+        assert_eq!(identifier.as_str(input), "note");
+        assert_eq!(children.len(), 1);
+        assert_eq!(children[0].span.as_str(input), "this is the note");
+    }
+
+    #[test]
+    fn parse_footnote_definition_rejects_whitespace_identifier() {
+        let input = "[^a b]: not a definition";
+        let result = Parser::new(input).parse();
+        assert!(matches!(result[0].kind, BlockKind::Paragraph { .. }));
+    }
+
+    #[test]
+    fn parse_footnote_definition_after_paragraph() {
+        let input = "See[^note] below\n\n[^note]: the note text";
+        let result = Parser::new(input).parse();
+
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0].kind, BlockKind::Paragraph { .. }));
+        assert!(matches!(
+            result[1].kind,
+            BlockKind::FootnoteDefinition { .. }
+        ));
+    }
+
+    #[test]
+    fn parse_unordered_list() {
+        let input = "- one\n- two\n- three";
+        let result = Parser::new(input).parse();
+
+        assert_eq!(result.len(), 1);
+        let BlockKind::List { kind, children } = &result[0].kind else {
+            panic!("expected List");
+        };
+        assert_eq!(*kind, ListType::Unordered);
+        assert_eq!(children.len(), 3);
+
+        for (item, text) in children.iter().zip(["one", "two", "three"]) {
+            let BlockKind::ListItem {
+                checked, inline, ..
+            } = &item.kind
+            else {
+                panic!("expected ListItem");
+            };
+            assert!(checked.is_none());
+            assert_eq!(inline.len(), 1);
+            assert!(matches!(inline[0].kind, InlineKind::Text));
+            assert_eq!(inline[0].span.as_str(input), text);
+        }
+    }
+
+    #[test]
+    fn parse_ordered_list() {
+        let input = "1. one\n2. two\n3. three";
+        let result = Parser::new(input).parse();
+
+        let BlockKind::List { kind, children } = &result[0].kind else {
+            panic!("expected List");
+        };
+        assert_eq!(*kind, ListType::Ordered);
+        assert_eq!(children.len(), 3);
+    }
+
+    #[test]
+    fn parse_list_item_markers() {
+        for marker in ["-", "*", "+"] {
+            let input = format!("{marker} item");
+            let result = Parser::new(&input).parse();
+            let BlockKind::List { kind, .. } = &result[0].kind else {
+                panic!("expected List for marker {marker}");
+            };
+            assert_eq!(*kind, ListType::Unordered);
+        }
+    }
+
+    #[test]
+    fn parse_list_with_checkboxes() {
+        let input = "- [ ] todo\n- [x] done\n- [X] also done\n- plain";
+        let result = Parser::new(input).parse();
+
+        let BlockKind::List { children, .. } = &result[0].kind else {
+            panic!("expected List");
+        };
+        assert_eq!(children.len(), 4);
+
+        let expect = [Some(false), Some(true), Some(true), None];
+        for (item, checked) in children.iter().zip(expect) {
+            let BlockKind::ListItem { checked: c, .. } = &item.kind else {
+                panic!("expected ListItem");
+            };
+            assert_eq!(*c, checked);
+        }
+    }
+
+    #[test]
+    fn parse_nested_list() {
+        let input = "- outer\n  - inner one\n  - inner two\n- outer two";
+        let result = Parser::new(input).parse();
+
+        let BlockKind::List { children, .. } = &result[0].kind else {
+            panic!("expected List");
+        };
+        assert_eq!(children.len(), 2);
+
+        let BlockKind::ListItem {
+            children: nested, ..
+        } = &children[0].kind
+        else {
+            panic!("expected ListItem");
+        };
+        assert_eq!(nested.len(), 1);
+        let BlockKind::List {
+            children: nested_items,
+            ..
+        } = &nested[0].kind
+        else {
+            panic!("expected nested List");
+        };
+        assert_eq!(nested_items.len(), 2);
+    }
+
+    #[test]
+    fn parse_list_with_inline_formatting() {
+        let input = "- **bold** item";
+        let result = Parser::new(input).parse();
+
+        let BlockKind::List { children, .. } = &result[0].kind else {
+            panic!("expected List");
+        };
+        let BlockKind::ListItem { inline, .. } = &children[0].kind else {
+            panic!("expected ListItem");
+        };
+        assert!(matches!(inline[0].kind, InlineKind::Bold { .. }));
+    }
+
+    #[test]
+    fn parse_list_after_paragraph() {
+        let input = "hello world\n- one\n- two";
+        let result = Parser::new(input).parse();
+
+        assert_eq!(result.len(), 2);
+        assert!(matches!(result[0].kind, BlockKind::Paragraph { .. }));
+        assert!(matches!(result[1].kind, BlockKind::List { .. }));
+    }
+
+    #[test]
+    fn text_starting_with_digit_is_paragraph_not_list() {
+        let input = "123 not a list";
+        let result = Parser::new(input).parse();
+        assert!(matches!(result[0].kind, BlockKind::Paragraph { .. }));
     }
 
     #[test]

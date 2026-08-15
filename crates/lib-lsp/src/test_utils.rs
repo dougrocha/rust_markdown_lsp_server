@@ -31,6 +31,14 @@ impl TestWorkspace {
         self
     }
 
+    /// Like `add_file`, but also marks the document as open (as `didOpen` would).
+    pub fn open_file(&mut self, path: &str, version: i32, content: &str) -> &mut Self {
+        self.add_file(path, version, content);
+        self.state.open_document(PathBuf::from(path));
+
+        self
+    }
+
     pub fn rename(&mut self, old: &str, new: &str) -> HashMap<String, Vec<TextEdit>> {
         let params = RenameFilesParams {
             files: vec![FileRename {

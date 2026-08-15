@@ -59,7 +59,29 @@ impl<'a> ReferenceCollector<'a> {
             self.check_reference_match(&headers_uri, doc, reference)
         });
 
-        links.chain(headers).collect()
+        let footnotes_uri = uri.clone();
+        let footnote_refs = doc.footnote_references().filter_map(move |footnote_ref| {
+            let reference = Reference::FootnoteRef(footnote_ref);
+            if self.is_source_reference(&footnotes_uri, reference) {
+                return None;
+            }
+            self.check_reference_match(&footnotes_uri, doc, reference)
+        });
+
+        let footnote_defs_uri = uri.clone();
+        let footnote_defs = doc.footnote_definitions().filter_map(move |footnote_def| {
+            let reference = Reference::FootnoteDef(footnote_def);
+            if self.is_source_reference(&footnote_defs_uri, reference) {
+                return None;
+            }
+            self.check_reference_match(&footnote_defs_uri, doc, reference)
+        });
+
+        links
+            .chain(headers)
+            .chain(footnote_refs)
+            .chain(footnote_defs)
+            .collect()
     }
 
     /// Collect all references that point to the a file, regardless of header
@@ -130,6 +152,48 @@ impl<'a> ReferenceCollector<'a> {
                 let header = link.header_str(&self.source_doc.source);
                 self.match_link_reference(uri, doc, reference, header.as_deref(), &resolved_target)
             }
+            Reference::FootnoteRef(footnote_ref) => {
+                let identifier = footnote_ref.identifier_str(&self.source_doc.source);
+                self.match_footnote_identifier(uri, doc, reference, &identifier)
+            }
+            Reference::FootnoteDef(footnote_def) => {
+                let identifier = footnote_def.identifier_str(&self.source_doc.source);
+                self.match_footnote_identifier(uri, doc, reference, &identifier)
+            }
+        }
+    }
+
+    /// Find other footnote references/definitions with the same identifier
+    /// within the same document
+    pub(crate) fn match_footnote_identifier(
+        &self,
+        uri: &gen_lsp_types::Uri,
+        doc: &Document,
+        reference: Reference<'a>,
+        source_identifier: &str,
+    ) -> Option<Location> {
+        if doc.path != self.source_doc.path {
+            return None;
+        }
+
+        match reference {
+            Reference::FootnoteRef(footnote_ref) => {
+                if footnote_ref.identifier_str(&doc.source) == source_identifier {
+                    let range = doc.source.slice(..).byte_to_lsp_range(footnote_ref.span);
+                    Some(Location::new(uri.clone(), range))
+                } else {
+                    None
+                }
+            }
+            Reference::FootnoteDef(footnote_def) => {
+                if footnote_def.identifier_str(&doc.source) == source_identifier {
+                    let range = doc.source.slice(..).byte_to_lsp_range(footnote_def.span);
+                    Some(Location::new(uri.clone(), range))
+                } else {
+                    None
+                }
+            }
+            _ => None,
         }
     }
 
@@ -179,6 +243,7 @@ impl<'a> ReferenceCollector<'a> {
                     let range = doc.source.slice(..).byte_to_lsp_range(header.span);
                     Location::new(uri.clone(), range)
                 }),
+            Reference::FootnoteRef(_) | Reference::FootnoteDef(_) => None,
         }
     }
 
