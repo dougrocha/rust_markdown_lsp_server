@@ -1,10 +1,12 @@
 use gen_lsp_types::{
     DocumentSymbol, DocumentSymbolParams, DocumentSymbolResponse, Position, Range, SymbolKind,
 };
-use lib_core::document::references::ReferenceKindOld;
 use miette::{Context, Result};
 
-use crate::{get_document, server_state::ServerState, uri::UriExt};
+use crate::{
+    get_document, server_state::ServerState, text_buffer_conversions::TextBufferConversions,
+    uri::UriExt,
+};
 
 pub fn process_document_symbol(
     lsp: &mut ServerState,
@@ -12,16 +14,16 @@ pub fn process_document_symbol(
 ) -> Result<Option<DocumentSymbolResponse>> {
     let uri = params.text_document.uri;
     let document = get_document!(lsp, &uri);
+    let slice = document.source.slice(..);
 
     let headers: Vec<(usize, String, Range)> = document
-        .references
-        .iter()
-        .filter_map(|r| {
-            if let ReferenceKindOld::Header { level, content } = &r.kind {
-                Some((*level, content.clone(), r.range))
-            } else {
-                None
-            }
+        .headers()
+        .map(|h| {
+            (
+                h.level as usize,
+                h.content_str(&document.source).to_string(),
+                slice.byte_to_lsp_range(h.span),
+            )
         })
         .collect();
 

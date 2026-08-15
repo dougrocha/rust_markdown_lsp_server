@@ -1,15 +1,12 @@
 pub mod references;
 
-use gen_lsp_types::{Position, Range, Uri};
+use gen_lsp_types::{Range, Uri};
 use miette::{Context, Result, miette};
 use ropey::RopeSlice;
 
 use lib_core::{
     config::{LinkConfig, LinkGenerationStyle},
-    document::{
-        Document,
-        references::{ReferenceKindOld, ReferenceOld},
-    },
+    document::Document,
     path::{extract_filename_stem, find_relative_path, slug::header_slug},
 };
 
@@ -37,8 +34,7 @@ pub fn get_content(
         return Ok(slice.to_string());
     };
 
-    let (extracted_content, _range) =
-        extract_header_section(header_target, &document.references, slice);
+    let (extracted_content, _range) = extract_header_section(header_target, document);
 
     match extracted_content {
         Some(content) => Ok(content.to_string()),
@@ -110,77 +106,53 @@ fn generate_absolute_path(root: &Uri, target: &Uri) -> Result<String> {
     Ok(format!("/{}", components.join("/")))
 }
 
-/// Extracts the content of a header section from the provided references.
-/// NOTE: Assumes `links` are sorted by position (top to bottom).
+/// Extracts the content of a header section (the header plus everything until the
+/// next header of the same or higher level) from the given document.
 pub fn extract_header_section<'a>(
     header: &str,
-    links: &[ReferenceOld],
-    content: RopeSlice<'a>,
+    document: &'a Document,
 ) -> (Option<RopeSlice<'a>>, Range) {
-    let mut start_position: Option<Position> = None;
-    let mut end_position: Option<Position> = None;
-    let mut header_level: Option<usize> = None;
+    let slice = document.source.slice(..);
 
-    // Optimization: Pre-calculate normalized target once
     let target_content = header.strip_prefix('#').unwrap_or(header);
     let normalized_target = header_slug(target_content);
 
-    for link in links {
-        if let ReferenceKindOld::Header {
-            level,
-            content: header_content,
-        } = &link.kind
+    let mut start: Option<(usize, u8)> = None;
+    let mut end_byte: Option<usize> = None;
+
+    for h in document.headers() {
+        let content = h.content_str(&document.source);
+
+        if start.is_none() {
+            let matches_header =
+                content == target_content || header_slug(&content) == normalized_target;
+
+            if matches_header {
+                start = Some((h.span.start, h.level));
+            }
+            continue;
+        }
+
+        // Stop at any header that is same level or higher (smaller number)
+        if let Some((_, current_level)) = start
+            && h.level <= current_level
         {
-            // Logic: Find start
-            if start_position.is_none() {
-                let matches_header = *header_content == target_content
-                    || header_slug(header_content) == normalized_target;
-
-                if matches_header {
-                    start_position = Some(link.range.start);
-                    header_level = Some(*level);
-                }
-                continue;
-            }
-
-            // Logic: Find end (must be after start, which loop order guarantees if sorted)
-            // Stop at any header that is same level or higher (smaller number)
-            if let Some(current_level) = header_level
-                && *level <= current_level
-            {
-                end_position = Some(link.range.start);
-                break;
-            }
+            end_byte = Some(h.span.start);
+            break;
         }
     }
 
-    match (start_position, end_position) {
-        (Some(start), Some(end)) if start < end && (end.line as usize) <= content.len_lines() => {
-            // Safety check: ensure positions are valid for this content
-            if let (Some(start_byte), Some(end_byte)) = (
-                content.try_position_to_byte_offset(start),
-                content.try_position_to_byte_offset(end),
-            ) {
-                (
-                    Some(content.byte_slice(start_byte..end_byte)),
-                    Range::new(start, end),
-                )
-            } else {
-                (None, Range::default())
-            }
-        }
-        (Some(start), None) if (start.line as usize) < content.len_lines() => {
-            if let Some(start_byte) = content.try_position_to_byte_offset(start) {
-                (
-                    Some(content.byte_slice(start_byte..)),
-                    Range::new(start, Position::new(content.len_lines() as u32, 0)),
-                )
-            } else {
-                (None, Range::default())
-            }
-        }
-        _ => (None, Range::default()),
-    }
+    let Some((start_byte, _)) = start else {
+        return (None, Range::default());
+    };
+
+    let end_byte = end_byte.unwrap_or(slice.len_bytes());
+    let range = Range::new(
+        slice.byte_offset_to_position(start_byte),
+        slice.byte_offset_to_position(end_byte),
+    );
+
+    (Some(slice.byte_slice(start_byte..end_byte)), range)
 }
 
 #[cfg(test)]
@@ -193,12 +165,10 @@ mod tests {
         let input = "# H1 Header\nContent under H1\n\n## H2 Header\nContent under H2\n\n### H3 Header\nContent under H3\n\n### Another H3\nMore H3 content\n\n## Another H2\nMore H2 content\n\n# Another H1\nMore H1 content";
 
         let document = Document::new(std::path::PathBuf::from("/TEST.md"), input, 0).unwrap();
-        let references = document.references;
-        let content = document.source.slice(..);
 
         // Test H3 section extraction - should stop at next H3, H2, or H1
         let target_header = "H3 Header".to_string();
-        let (extracted, _range) = extract_header_section(&target_header, &references, content);
+        let (extracted, _range) = extract_header_section(&target_header, &document);
 
         assert!(extracted.is_some(), "Should extract H3 section");
         let extracted_text = extracted.unwrap().to_string();
@@ -215,7 +185,7 @@ mod tests {
 
         // Test H2 section extraction - should stop at next H2 or H1
         let target_header = "H2 Header".to_string();
-        let (extracted, _range) = extract_header_section(&target_header, &references, content);
+        let (extracted, _range) = extract_header_section(&target_header, &document);
 
         assert!(extracted.is_some(), "Should extract H2 section");
         let extracted_text = extracted.unwrap().to_string();
@@ -265,35 +235,13 @@ mod tests {
 
     #[test]
     fn test_extract_header_section_edge_cases() {
-        use gen_lsp_types::{Position, Range};
-        use lib_core::document::references::{ReferenceKindOld, ReferenceOld};
-        use ropey::Rope;
-
         // Test case: H1 section that goes to end of file
         let content = "# Main Header\nContent under main header\n\n## Sub Header\nSub content\n\nMore content at end";
-        let rope = Rope::from_str(content);
-        let slice = rope.slice(..);
-
-        let references = vec![
-            ReferenceOld {
-                kind: ReferenceKindOld::Header {
-                    level: 1,
-                    content: "Main Header".to_string(),
-                },
-                range: Range::new(Position::new(0, 0), Position::new(0, 13)),
-            },
-            ReferenceOld {
-                kind: ReferenceKindOld::Header {
-                    level: 2,
-                    content: "Sub Header".to_string(),
-                },
-                range: Range::new(Position::new(3, 0), Position::new(3, 12)),
-            },
-        ];
+        let document = Document::new(std::path::PathBuf::from("/TEST.md"), content, 0).unwrap();
 
         // Test H1 extraction - should go to end of file
         let target_header = "Main Header".to_string();
-        let (extracted, _range) = extract_header_section(&target_header, &references, slice);
+        let (extracted, _range) = extract_header_section(&target_header, &document);
 
         assert!(extracted.is_some(), "Should extract H1 section");
         let extracted_text = extracted.unwrap().to_string();
@@ -314,8 +262,7 @@ mod tests {
 
         // Test with hash prefix in target
         let target_header_with_hash = "#Main Header";
-        let (extracted, _range) =
-            extract_header_section(target_header_with_hash, &references, slice);
+        let (extracted, _range) = extract_header_section(target_header_with_hash, &document);
 
         assert!(
             extracted.is_some(),

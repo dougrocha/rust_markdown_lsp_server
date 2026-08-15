@@ -1,14 +1,12 @@
 use gen_lsp_types::{Location, Uri};
 use lib_core::{
-    document::{
-        Document,
-        references::{ReferenceKindOld, ReferenceOld as DocReference},
-    },
+    document::{Document, Reference, index::Header, index::Link},
     vault::Vault,
 };
 
 use crate::{
-    ServerState, handlers::link_resolver::resolve_target_uri, helpers::header_slug, uri::UriExt,
+    ServerState, handlers::link_resolver::resolve_target_uri,
+    helpers::header_slug, text_buffer_conversions::TextBufferConversions, uri::UriExt,
 };
 
 /// Helper for collecting references to a specific item in the document
@@ -16,14 +14,14 @@ pub(crate) struct ReferenceCollector<'a> {
     pub(crate) lsp: &'a ServerState,
     pub(crate) source_doc: &'a Document,
     pub(crate) source_uri: &'a Uri,
-    pub(crate) source_ref: &'a DocReference,
+    pub(crate) source_ref: Reference<'a>,
 }
 
 impl<'a> ReferenceCollector<'a> {
     pub(crate) fn new(
         src_doc: &'a Document,
         uri: &'a gen_lsp_types::Uri,
-        reference: &'a DocReference,
+        reference: Reference<'a>,
         lsp: &'a ServerState,
     ) -> Self {
         Self {
@@ -34,17 +32,34 @@ impl<'a> ReferenceCollector<'a> {
         }
     }
 
-    pub(crate) fn collect_from(&self, documents: &Vault) -> Vec<Location> {
+    pub(crate) fn collect_from(&self, documents: &'a Vault) -> Vec<Location> {
         documents
-            .get_references_with_path()
-            .filter_map(|(path, ref_doc)| {
-                let uri = Uri::from_file_path(path)?;
-                if self.is_source_reference(&uri, ref_doc) {
-                    return None;
-                }
-                self.check_reference_match(&uri, ref_doc)
-            })
+            .iter()
+            .filter_map(|doc| Some((Uri::from_file_path(&doc.path)?, doc)))
+            .flat_map(|(uri, doc)| self.check_document(&uri, doc))
             .collect()
+    }
+
+    fn check_document(&self, uri: &Uri, doc: &'a Document) -> Vec<Location> {
+        let links_uri = uri.clone();
+        let links = doc.links().filter_map(move |link| {
+            let reference = Reference::Link(link);
+            if self.is_source_reference(&links_uri, reference) {
+                return None;
+            }
+            self.check_reference_match(&links_uri, doc, reference)
+        });
+
+        let headers_uri = uri.clone();
+        let headers = doc.headers().filter_map(move |header| {
+            let reference = Reference::Header(header);
+            if self.is_source_reference(&headers_uri, reference) {
+                return None;
+            }
+            self.check_reference_match(&headers_uri, doc, reference)
+        });
+
+        links.chain(headers).collect()
     }
 
     /// Collect all references that point to the a file, regardless of header
@@ -53,16 +68,16 @@ impl<'a> ReferenceCollector<'a> {
         source_uri: &'a Uri,
     ) -> Vec<Location> {
         lsp.documents
-            .get_references_with_path()
-            .filter_map(move |(path, reference)| {
-                let uri = UriExt::from_file_path(path)?;
-                let referring_doc = lsp.documents.get_document(path)?;
+            .iter()
+            .filter_map(|doc| Some((UriExt::from_file_path(&doc.path)?, doc)))
+            .flat_map(move |(uri, doc): (Uri, &Document)| {
+                doc.links().filter_map(move |link| {
+                    let target = link.target_str(&doc.source);
+                    Self::resolve_and_check_target(lsp, doc, &target, source_uri)?;
 
-                reference.kind.get_target().and_then(|target| {
-                    Self::resolve_and_check_target(lsp, referring_doc, target, source_uri)
-                })?;
-
-                Some(Location::new(uri, reference.range))
+                    let range = doc.source.slice(..).byte_to_lsp_range(link.span);
+                    Some(Location::new(uri.clone(), range))
+                })
             })
             .collect()
     }
@@ -84,28 +99,27 @@ impl<'a> ReferenceCollector<'a> {
         }
     }
 
-    pub(crate) fn is_source_reference(
-        &self,
-        uri: &gen_lsp_types::Uri,
-        reference: &DocReference,
-    ) -> bool {
-        uri == self.source_uri && reference.range == self.source_ref.range
+    pub(crate) fn is_source_reference(&self, uri: &gen_lsp_types::Uri, reference: Reference<'a>) -> bool {
+        uri == self.source_uri && reference.span() == self.source_ref.span()
     }
 
     /// Check if a reference matches our source reference and return its location if so
     pub(crate) fn check_reference_match(
         &self,
         uri: &gen_lsp_types::Uri,
-        reference: &DocReference,
+        doc: &'a Document,
+        reference: Reference<'a>,
     ) -> Option<Location> {
-        match &self.source_ref.kind {
-            ReferenceKindOld::Header { content, .. } => {
-                self.match_header_reference(uri, reference, content)
+        match self.source_ref {
+            Reference::Header(header) => {
+                let content = header.content_str(&self.source_doc.source);
+                self.match_header_reference(uri, doc, reference, &content)
             }
-            ReferenceKindOld::Link { header, target, .. }
-            | ReferenceKindOld::WikiLink { header, target, .. } => {
+            Reference::Link(link) => {
+                let target = link.target_str(&self.source_doc.source);
                 // Resolve the source link's target to compare with other references
-                let resolved_target = match resolve_target_uri(self.lsp, self.source_doc, target) {
+                let resolved_target = match resolve_target_uri(self.lsp, self.source_doc, &target)
+                {
                     Ok(target) => target,
                     Err(err) => {
                         tracing::error!("Source link target resolution failed: {:?}", err);
@@ -113,7 +127,8 @@ impl<'a> ReferenceCollector<'a> {
                     }
                 };
 
-                self.match_link_reference(uri, reference, header.as_deref(), &resolved_target)
+                let header = link.header_str(&self.source_doc.source);
+                self.match_link_reference(uri, doc, reference, header.as_deref(), &resolved_target)
             }
         }
     }
@@ -122,17 +137,22 @@ impl<'a> ReferenceCollector<'a> {
     pub(crate) fn match_header_reference(
         &self,
         uri: &gen_lsp_types::Uri,
-        reference: &DocReference,
+        doc: &Document,
+        reference: Reference<'a>,
         source_content: &str,
     ) -> Option<Location> {
-        let target = reference.kind.get_target()?;
+        let Reference::Link(link) = reference else {
+            return None;
+        };
 
-        Self::resolve_and_check_target(self.lsp, self.source_doc, target, self.source_uri)?;
+        let target = link.target_str(&doc.source);
+        Self::resolve_and_check_target(self.lsp, self.source_doc, &target, self.source_uri)?;
 
-        if let Some(link_header) = reference.kind.get_link_header()
-            && normalized_headers_match(source_content, link_header)
+        if let Some(link_header) = link.header_str(&doc.source)
+            && normalized_headers_match(source_content, &link_header)
         {
-            Some(Location::new(uri.clone(), reference.range))
+            let range = doc.source.slice(..).byte_to_lsp_range(link.span);
+            Some(Location::new(uri.clone(), range))
         } else {
             None
         }
@@ -141,35 +161,40 @@ impl<'a> ReferenceCollector<'a> {
     pub(crate) fn match_link_reference(
         &self,
         uri: &gen_lsp_types::Uri,
-        reference: &DocReference,
+        doc: &Document,
+        reference: Reference<'a>,
         source_header: Option<&str>,
         source_target: &gen_lsp_types::Uri,
     ) -> Option<Location> {
-        let location = Location::new(uri.clone(), reference.range);
-
-        match &reference.kind {
-            ReferenceKindOld::Link { .. } | ReferenceKindOld::WikiLink { .. } => self
-                .match_link_to_link(reference, source_header, source_target)
-                .map(|_| location),
-            ReferenceKindOld::Header { .. } => self
-                .match_link_to_header(reference, uri, source_header, source_target)
-                .map(|_| location),
+        match reference {
+            Reference::Link(link) => self
+                .match_link_to_link(doc, link, source_header, source_target)
+                .map(|_| {
+                    let range = doc.source.slice(..).byte_to_lsp_range(link.span);
+                    Location::new(uri.clone(), range)
+                }),
+            Reference::Header(header) => self
+                .match_link_to_header(doc, header, uri, source_header, source_target)
+                .map(|_| {
+                    let range = doc.source.slice(..).byte_to_lsp_range(header.span);
+                    Location::new(uri.clone(), range)
+                }),
         }
     }
 
     pub(crate) fn match_link_to_link(
         &self,
-        reference: &DocReference,
+        doc: &Document,
+        link: &Link,
         source_header: Option<&str>,
         source_target: &gen_lsp_types::Uri,
     ) -> Option<()> {
-        let target = reference.kind.get_target()?;
+        let target = link.target_str(&doc.source);
+        Self::resolve_and_check_target(self.lsp, self.source_doc, &target, source_target)?;
 
-        Self::resolve_and_check_target(self.lsp, self.source_doc, target, source_target)?;
+        let reference_header = link.header_str(&doc.source);
 
-        let reference_header = reference.kind.get_link_header();
-
-        if source_header == reference_header {
+        if source_header == reference_header.as_deref() {
             Some(())
         } else {
             None
@@ -178,7 +203,8 @@ impl<'a> ReferenceCollector<'a> {
 
     pub(crate) fn match_link_to_header(
         &self,
-        reference: &DocReference,
+        doc: &Document,
+        header: &Header,
         uri: &gen_lsp_types::Uri,
         source_header: Option<&str>,
         source_target: &gen_lsp_types::Uri,
@@ -187,10 +213,10 @@ impl<'a> ReferenceCollector<'a> {
             return None;
         }
 
-        let header_content = reference.kind.get_content()?;
+        let header_content = header.content_str(&doc.source);
         let source_header = source_header?;
 
-        if normalized_headers_match(header_content, source_header) {
+        if normalized_headers_match(&header_content, source_header) {
             Some(())
         } else {
             None

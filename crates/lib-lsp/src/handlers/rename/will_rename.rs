@@ -2,15 +2,12 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use gen_lsp_types::{RenameFilesParams, TextEdit, Uri, WorkspaceEdit};
 use lib_core::{
-    document::{
-        Document,
-        references::{ReferenceKindOld, ReferenceOld},
-    },
-    path::{find_relative_path, resolve_reference_target},
+    document::{Document, index::Link},
+    path::{combine_and_normalize, find_relative_path},
 };
 use miette::{IntoDiagnostic, Result};
 
-use crate::{ServerState, uri::UriExt};
+use crate::{ServerState, text_buffer_conversions::TextBufferConversions, uri::UriExt};
 
 fn parse_file_rename_uri(uri_str: &str) -> Result<(Uri, PathBuf)> {
     let uri = Uri::from_str(uri_str).into_diagnostic()?;
@@ -36,34 +33,29 @@ pub fn process_will_rename_files(
         let (new_uri, new_path) = parse_file_rename_uri(&file.new_uri)?;
 
         // update references connected to the changed file
-        for (doc, reference) in find_references_to_uri(lsp, &old_uri) {
+        for (doc, link) in find_references_to_uri(lsp, &old_uri) {
             let new_rel = find_relative_path(&doc.path, &new_path)?;
-            let new_ref = create_reference_with_new_uri(reference, new_rel);
+            let new_text = link.render_with_target(&doc.source, &new_rel);
 
             let Some(doc_uri) = Uri::from_file_path(&doc.path) else {
                 tracing::debug!("Failed to convert path to URI: {:?}", doc.path);
                 continue;
             };
 
-            changes
-                .entry(doc_uri)
-                .or_default()
-                .push(TextEdit::new(reference.range, new_ref.to_file_text()));
+            let range = doc.source.slice(..).byte_to_lsp_range(link.span);
+            changes.entry(doc_uri).or_default().push(TextEdit::new(range, new_text));
         }
 
         // update references in the moved file
         if let Some(doc) = lsp.documents.get_document(&old_path) {
-            for edit in doc
-                .references
-                .iter()
-                .filter(|r| r.kind.is_link())
-                .filter_map(|reference| {
-                    let resolved = resolve_reference_target(&old_path, reference).ok()?;
-                    let new_rel = find_relative_path(&new_path, resolved).ok()?;
-                    let new_ref = create_reference_with_new_uri(reference, new_rel);
-                    Some(TextEdit::new(reference.range, new_ref.to_file_text()))
-                })
-            {
+            for edit in doc.links().filter_map(|link| {
+                let target = link.target_str(&doc.source);
+                let resolved = combine_and_normalize(&old_path, &target).ok()?;
+                let new_rel = find_relative_path(&new_path, resolved).ok()?;
+                let new_text = link.render_with_target(&doc.source, &new_rel);
+                let range = doc.source.slice(..).byte_to_lsp_range(link.span);
+                Some(TextEdit::new(range, new_text))
+            }) {
                 changes.entry(new_uri.clone()).or_default().push(edit);
             }
         }
@@ -75,56 +67,28 @@ pub fn process_will_rename_files(
     }))
 }
 
-fn create_reference_with_new_uri(reference: &ReferenceOld, new_target: String) -> ReferenceOld {
-    let ref_kind = match reference.kind.clone() {
-        ReferenceKindOld::WikiLink { alias, header, .. } => ReferenceKindOld::WikiLink {
-            target: new_target,
-            alias,
-            header,
-        },
-        ReferenceKindOld::Link {
-            alt_text, header, ..
-        } => ReferenceKindOld::Link {
-            target: new_target,
-            header,
-            alt_text,
-            title: None,
-        },
-        other => other,
-    };
-
-    ReferenceOld {
-        kind: ref_kind,
-        range: reference.range,
-    }
-}
-
-// Find all references that match a uri
+// Find all links that resolve to a matching uri
 fn find_references_to_uri<'a>(
     lsp: &'a ServerState,
     match_uri: &Uri,
-) -> impl Iterator<Item = (&'a Document, &'a ReferenceOld)> {
+) -> impl Iterator<Item = (&'a Document, &'a Link)> {
     let match_path: Option<PathBuf> = match_uri.to_file_path().map(|c| c.into_owned());
 
     lsp.documents.iter().flat_map(move |doc| {
-        doc.references
-            .iter()
-            .filter(|r| r.kind.is_link())
-            .filter_map({
-                let match_path = match_path.clone();
+        let match_path = match_path.clone();
 
-                move |reference| {
-                    let resolved_path = resolve_reference_target(&doc.path, reference).ok()?;
+        doc.links().filter_map(move |link| {
+            let target = link.target_str(&doc.source);
+            let resolved_path = combine_and_normalize(&doc.path, &target).ok()?;
 
-                    if let Some(ref m_path) = match_path
-                        && m_path == &resolved_path
-                    {
-                        return Some((doc, reference));
-                    }
+            if let Some(ref m_path) = match_path
+                && m_path == &resolved_path
+            {
+                return Some((doc, link));
+            }
 
-                    None
-                }
-            })
+            None
+        })
     })
 }
 

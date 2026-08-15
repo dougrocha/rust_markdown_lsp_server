@@ -3,7 +3,7 @@ use gen_lsp_types::{
     DeleteFileOptions, DocumentChange, Edit, OptionalVersionedTextDocumentIdentifier, Position,
     Range, TextDocumentEdit, TextEdit, Uri, WorkspaceEdit,
 };
-use lib_core::document::references::ReferenceKindOld;
+use lib_core::document::Reference;
 use miette::{Context, Result, miette};
 
 use crate::{
@@ -11,6 +11,7 @@ use crate::{
     handlers::link_resolver::resolve_target_uri,
     helpers::{extract_header_section, generate_link_text, get_content},
     server_state::ServerState,
+    text_buffer_conversions::TextBufferConversions,
     uri::UriExt,
 };
 
@@ -41,7 +42,11 @@ fn handle_non_range(
 
     let source_root = lsp.get_workspace_root_for_path(&document.path);
 
-    let Some(reference) = document.get_reference_at_position_old(range.start) else {
+    let Some(offset) = slice.try_position_to_byte_offset(range.start) else {
+        return Ok(Some(vec![]));
+    };
+
+    let Some(reference) = document.get_reference_at_offset(offset) else {
         return Ok(Some(vec![]));
     };
 
@@ -52,11 +57,13 @@ fn handle_non_range(
 
     let mut actions: Vec<CodeActionResponse> = Vec::new();
 
-    match &reference.kind {
-        ReferenceKindOld::Header { content, level } => {
-            let (header_content, range) =
-                extract_header_section(content, &document.references, slice);
-            let delta = 1i32 - *level as i32;
+    match reference {
+        Reference::Header(header) => {
+            let content = header.content_str(&document.source);
+            let level = header.level;
+
+            let (header_content, range) = extract_header_section(&content, document);
+            let delta = 1i32 - level as i32;
 
             let new_filename = format!(
                 "{}.md",
@@ -125,12 +132,15 @@ fn handle_non_range(
                 }));
             }
         }
-        ReferenceKindOld::Link { target, header, .. }
-        | ReferenceKindOld::WikiLink { target, header, .. } => {
-            let target_uri = resolve_target_uri(lsp, document, target)?;
+        Reference::Link(link) => {
+            let target = link.target_str(&document.source);
+            let header = link.header_str(&document.source);
+            let target_uri = resolve_target_uri(lsp, document, &target)?;
 
             // TODO: normalize later
-            let target_doc_content = get_content(lsp, document, target, header.as_deref())?;
+            let target_doc_content = get_content(lsp, document, &target, header.as_deref())?;
+
+            let reference_range = slice.byte_to_lsp_range(link.span);
 
             let document_changes = vec![
                 DocumentChange::TextDocumentEdit(TextDocumentEdit {
@@ -141,7 +151,7 @@ fn handle_non_range(
                         version: Some(document.version),
                     },
                     edits: vec![Edit::TextEdit(TextEdit::new(
-                        reference.range,
+                        reference_range,
                         target_doc_content,
                     ))],
                 }),
@@ -221,5 +231,66 @@ mod tests {
         let input = "# Title\n\nThis has a #hashtag in it.\n\n## Sub";
         let expected = "# Title\n\nThis has a #hashtag in it.\n\n# Sub";
         assert_eq!(normalize_header_levels(input, -1), expected);
+    }
+
+    #[test]
+    fn extract_header_section_action_creates_new_file() {
+        use crate::test_utils::TestWorkspace;
+        use gen_lsp_types::{CodeActionContext, TextDocumentIdentifier};
+
+        let mut ws = TestWorkspace::new();
+        ws.add_file(
+            "/workspace/notes.md",
+            1,
+            "# Intro\n\nHello\n\n## Section\n\nBody text\n\n## Next\n\nMore",
+        );
+
+        let uri: Uri = "file:///workspace/notes.md".parse().unwrap();
+        let params = CodeActionParams {
+            text_document: TextDocumentIdentifier { uri: uri.clone() },
+            range: Range::new(Position::new(3, 3), Position::new(3, 3)),
+            context: CodeActionContext {
+                diagnostics: vec![],
+                only: None,
+                trigger_kind: None,
+            },
+            work_done_progress_params: Default::default(),
+            partial_result_params: Default::default(),
+        };
+
+        let actions = process_code_action(&mut ws.state, params)
+            .unwrap()
+            .unwrap();
+
+        assert_eq!(actions.len(), 1);
+        let CodeActionResponse::CodeAction(action) = &actions[0] else {
+            panic!("expected a code action");
+        };
+        assert_eq!(action.title, "Extract header & section");
+
+        let changes = action
+            .edit
+            .as_ref()
+            .unwrap()
+            .document_changes
+            .as_ref()
+            .unwrap();
+        assert_eq!(changes.len(), 3);
+
+        let DocumentChange::CreateFile(_) = &changes[0] else {
+            panic!("expected a create-file change first");
+        };
+        let DocumentChange::TextDocumentEdit(source_edit) = &changes[2] else {
+            panic!("expected a text-document-edit updating the source file last");
+        };
+        assert_eq!(
+            source_edit.text_document.text_document_identifier.uri,
+            uri
+        );
+        assert_eq!(source_edit.edits.len(), 1);
+        let Edit::TextEdit(text_edit) = &source_edit.edits[0] else {
+            panic!("expected a plain text edit");
+        };
+        assert!(text_edit.new_text.starts_with("[Section]("));
     }
 }

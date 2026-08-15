@@ -1,7 +1,4 @@
-use lib_core::{
-    document::{Document, references::ReferenceKindOld},
-    path::slug::header_slug,
-};
+use lib_core::{document::Document, path::slug::header_slug};
 
 use crate::text_buffer_conversions::TextBufferConversions;
 
@@ -276,30 +273,30 @@ fn complete_headers(
 
     let file_path = file_uri.to_file_path()?;
     let ref_doc = lsp.documents.get_document(&file_path)?;
-    for doc_ref in &ref_doc.references {
-        if let ReferenceKindOld::Header { level, content } = &doc_ref.kind {
-            let header_id = header_slug(content);
+    for header in ref_doc.headers() {
+        let content = header.content_str(&ref_doc.source);
+        let level = header.level;
+        let header_id = header_slug(&content);
 
-            let label = content.clone();
+        let label = content.to_string();
 
-            let insert_text = ctx
-                .link_type
-                .format_completion(&header_id, ctx.is_incomplete);
+        let insert_text = ctx
+            .link_type
+            .format_completion(&header_id, ctx.is_incomplete);
 
-            completions.push(CompletionItem {
-                label,
-                label_details: Some(CompletionItemLabelDetails {
-                    detail: None,
-                    description: Some(format!("H{level}")),
-                }),
-                kind: Some(CompletionItemKind::Reference),
-                documentation: Some(Documentation::String(format!(
-                    "# {content}\n\nHeading level {level}\n\nLink: `{header_id}`"
-                ))),
-                insert_text: Some(insert_text),
-                ..Default::default()
-            });
-        }
+        completions.push(CompletionItem {
+            label,
+            label_details: Some(CompletionItemLabelDetails {
+                detail: None,
+                description: Some(format!("H{level}")),
+            }),
+            kind: Some(CompletionItemKind::Reference),
+            documentation: Some(Documentation::String(format!(
+                "# {content}\n\nHeading level {level}\n\nLink: `{header_id}`"
+            ))),
+            insert_text: Some(insert_text),
+            ..Default::default()
+        });
     }
 
     Some(completions)
@@ -308,10 +305,7 @@ fn complete_headers(
 fn has_closing_chars(document: &Document, byte_pos: usize, link_type: LinkType) -> bool {
     let slice = document.source.slice(..);
 
-    if document
-        .get_reference_at_position_old(slice.byte_offset_to_position(byte_pos))
-        .is_some()
-    {
+    if document.get_reference_at_offset(byte_pos).is_some() {
         return true;
     }
 
@@ -372,4 +366,50 @@ fn extract_file_and_link_type_from_context(
     }
 
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use gen_lsp_types::{
+        CompletionContext, PartialResultParams, TextDocumentIdentifier,
+        TextDocumentPositionParams, WorkDoneProgressParams,
+    };
+
+    use super::*;
+    use crate::test_utils::TestWorkspace;
+
+    #[test]
+    fn header_completion_after_target_and_hash() {
+        let mut ws = TestWorkspace::new();
+        ws.add_file("/workspace/notes.md", 1, "[link](./target.md#")
+            .add_file(
+                "/workspace/target.md",
+                1,
+                "# First Header\n\n## Second Header",
+            );
+
+        let params = CompletionParams {
+            context: Some(CompletionContext {
+                trigger_kind: CompletionTriggerKind::TriggerCharacter,
+                trigger_character: Some("#".to_string()),
+            }),
+            work_done_progress_params: WorkDoneProgressParams::default(),
+            partial_result_params: PartialResultParams::default(),
+            text_document_position_params: TextDocumentPositionParams {
+                text_document: TextDocumentIdentifier {
+                    uri: "file:///workspace/notes.md".parse().unwrap(),
+                },
+                position: Position::new(0, 19),
+            },
+        };
+
+        let response = process_completion(&mut ws.state, params).unwrap().unwrap();
+        let CompletionResponse::CompletionItemList(items) = response else {
+            panic!("expected a completion item list");
+        };
+
+        assert_eq!(items.len(), 2);
+        assert_eq!(items[0].label, "First Header");
+        assert_eq!(items[1].label, "Second Header");
+    }
 }

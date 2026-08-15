@@ -2,10 +2,10 @@ use gen_lsp_types::{
     BaseSymbolInformation, Location, SymbolInformation, SymbolKind, Uri, WorkspaceSymbolParams,
     WorkspaceSymbolResponse,
 };
-use lib_core::{document::references::ReferenceKindOld, path::extract_filename_stem};
+use lib_core::path::extract_filename_stem;
 use miette::Result;
 
-use crate::{server_state::ServerState, uri::UriExt};
+use crate::{server_state::ServerState, text_buffer_conversions::TextBufferConversions, uri::UriExt};
 
 pub fn process_workspace_symbol(
     lsp: &mut ServerState,
@@ -19,11 +19,10 @@ pub fn process_workspace_symbol(
         .flat_map(|doc| {
             let container_name = extract_filename_stem(&doc.path);
             let uri = Uri::from_file_path(doc.path.as_path());
+            let slice = doc.source.slice(..);
 
-            doc.references.iter().filter_map(move |r| {
-                let ReferenceKindOld::Header { content, .. } = &r.kind else {
-                    return None;
-                };
+            doc.headers().filter_map(move |h| {
+                let content = h.content_str(&doc.source);
 
                 if !query.is_empty() && !content.to_lowercase().contains(query) {
                     return None;
@@ -31,9 +30,9 @@ pub fn process_workspace_symbol(
 
                 Some(SymbolInformation::new(
                     None,
-                    Location::new(uri.as_ref()?.clone(), r.range),
+                    Location::new(uri.as_ref()?.clone(), slice.byte_to_lsp_range(h.span)),
                     BaseSymbolInformation::new(
-                        content.clone(),
+                        content.to_string(),
                         SymbolKind::String,
                         None,
                         container_name.clone(),

@@ -1,10 +1,9 @@
 use std::{collections::HashMap, fmt::Debug, path::PathBuf};
 
-use gen_lsp_types::{Diagnostic, Position, Range as LspRange};
+use gen_lsp_types::Diagnostic;
 use lib_parser::new_markdown::{Block, BlockKind, Inline, InlineKind, Parser, Span};
 use miette::Result;
-use references::{ReferenceKindOld, ReferenceOld};
-use ropey::{Rope, RopeSlice};
+use ropey::Rope;
 
 use crate::document::{
     index::{Header, Link, LinkKind},
@@ -13,8 +12,8 @@ use crate::document::{
 
 pub mod index;
 pub mod metadata;
-pub mod references;
 
+#[derive(Clone, Copy)]
 pub enum Reference<'a> {
     Link(&'a Link),
     Header(&'a Header),
@@ -55,7 +54,6 @@ pub struct Document {
 
     // TODO: Delete
     pub frontmatter: HashMap<String, FrontmatterValue>,
-    pub references: Vec<ReferenceOld>,
     pub diagnostics: Vec<Diagnostic>,
 
     // TODO: remove from here as only the lsp server cares about this
@@ -79,12 +77,6 @@ impl Document {
         self.version = version;
         self.reparse(content);
         Ok(())
-    }
-
-    pub fn get_reference_at_position_old(&self, position: Position) -> Option<&ReferenceOld> {
-        self.references
-            .iter()
-            .find(|reference| reference.contains_position(position))
     }
 
     pub fn links(&self) -> impl Iterator<Item = &Link> {
@@ -116,63 +108,7 @@ impl Document {
         for block in &blocks {
             extract_block(self, block, content);
         }
-
-        self.references = build_references(self, content);
     }
-}
-
-fn byte_offset_to_position(slice: &RopeSlice, byte_offset: usize) -> Position {
-    let line_idx = slice.byte_to_line(byte_offset);
-    let line_start_char = slice.line_to_char(line_idx);
-    let global_char_idx = slice.byte_to_char(byte_offset);
-    let char_offset = global_char_idx - line_start_char;
-    Position::new(line_idx as u32, char_offset as u32)
-}
-
-fn byte_span_to_lsp_range(slice: &RopeSlice, span: Span) -> LspRange {
-    let start_pos = byte_offset_to_position(slice, span.start);
-    let end_pos = byte_offset_to_position(slice, span.end);
-    LspRange::new(start_pos, end_pos)
-}
-
-fn build_references(doc: &Document, content: &str) -> Vec<ReferenceOld> {
-    let slice = doc.source.slice(..);
-    let mut references = Vec::with_capacity(doc.headers.len() + doc.links.len());
-
-    for header in &doc.headers {
-        references.push(ReferenceOld {
-            kind: ReferenceKindOld::Header {
-                level: header.level as usize,
-                content: header.text_span.as_str(content).to_string(),
-            },
-            range: byte_span_to_lsp_range(&slice, header.span),
-        });
-    }
-
-    for link in &doc.links {
-        let header = link.header_str(&doc.source).map(|h| h.to_string());
-        let kind = match &link.kind {
-            LinkKind::Wiki { target, alias, .. } => ReferenceKindOld::WikiLink {
-                target: target.as_str(content).to_string(),
-                alias: alias.map(|a| a.as_str(content).to_string()),
-                header,
-            },
-            LinkKind::Inline {
-                label, url, title, ..
-            } => ReferenceKindOld::Link {
-                target: url.as_str(content).to_string(),
-                alt_text: label.as_str(content).to_string(),
-                title: title.map(|t| t.as_str(content).to_string()),
-                header,
-            },
-        };
-        references.push(ReferenceOld {
-            kind,
-            range: byte_span_to_lsp_range(&slice, link.span),
-        });
-    }
-
-    references
 }
 
 fn extract_block(doc: &mut Document, block: &Block, content: &str) {
@@ -269,39 +205,42 @@ mod tests {
 
     #[test]
     fn builds_references_for_headers_and_links() {
-        let d = doc("# Hello\n\n[[note#Section|alias]] and [text](url#Frag)");
-        assert_eq!(d.references.len(), 3);
+        let content = "# Hello\n\n[[note#Section|alias]] and [text](url#Frag)";
+        let d = doc(content);
 
-        let ReferenceKindOld::Header { level, content } = &d.references[0].kind else {
-            panic!("expected header reference");
-        };
-        assert_eq!(*level, 1);
-        assert_eq!(content, "Hello");
+        assert_eq!(d.headers().count(), 1);
+        assert_eq!(d.links().count(), 2);
 
-        let ReferenceKindOld::WikiLink {
+        let header = d.headers().next().unwrap();
+        assert_eq!(header.level, 1);
+        assert_eq!(header.content_str(&d.source), "Hello");
+
+        let mut links = d.links();
+
+        let LinkKind::Wiki {
             target,
-            alias,
             header,
-        } = &d.references[1].kind
+            alias,
+        } = &links.next().unwrap().kind
         else {
             panic!("expected wikilink reference");
         };
-        assert_eq!(target, "note");
-        assert_eq!(alias.as_deref(), Some("alias"));
-        assert_eq!(header.as_deref(), Some("Section"));
+        assert_eq!(target.as_str(content), "note");
+        assert_eq!(header.map(|h| h.as_str(content)), Some("Section"));
+        assert_eq!(alias.map(|a| a.as_str(content)), Some("alias"));
 
-        let ReferenceKindOld::Link {
-            target,
-            alt_text,
+        let LinkKind::Inline {
+            label,
+            url,
             header,
             ..
-        } = &d.references[2].kind
+        } = &links.next().unwrap().kind
         else {
             panic!("expected link reference");
         };
-        assert_eq!(target, "url");
-        assert_eq!(alt_text, "text");
-        assert_eq!(header.as_deref(), Some("Frag"));
+        assert_eq!(url.as_str(content), "url");
+        assert_eq!(label.as_str(content), "text");
+        assert_eq!(header.map(|h| h.as_str(content)), Some("Frag"));
     }
 
     #[test]
