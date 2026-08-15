@@ -61,6 +61,7 @@ pub struct Document {
     footnote_references: Vec<FootnoteReference>,
     tags: Vec<Tag>,
     diagnostics: Vec<index::Diagnostic>,
+    has_frontmatter: bool,
 
     pub frontmatter: HashMap<String, FrontmatterValue>,
 }
@@ -113,6 +114,10 @@ impl Document {
         self.diagnostics.iter()
     }
 
+    pub fn has_frontmatter(&self) -> bool {
+        self.has_frontmatter
+    }
+
     pub fn get_reference_at_offset<'a>(&'a self, byte_offset: usize) -> Option<Reference<'a>> {
         self.links()
             .map(Reference::Link)
@@ -137,6 +142,7 @@ impl Document {
         self.tags.clear();
         self.diagnostics.clear();
         self.frontmatter.clear();
+        self.has_frontmatter = false;
 
         for block in &blocks {
             extract_block(self, block, content);
@@ -185,6 +191,7 @@ fn extract_block(doc: &mut Document, block: &Block, content: &str) {
         BlockKind::Frontmatter => {
             let text = block.span.as_str(content);
             if let Some(frontmatter) = lib_parser::yaml::parse_frontmatter(text) {
+                doc.has_frontmatter = true;
                 for (key, value) in frontmatter.0 {
                     doc.frontmatter
                         .insert(key.to_string(), FrontmatterValue::from(value));
@@ -412,6 +419,19 @@ mod tests {
             Some(&["a".to_string(), "b".to_string()][..])
         );
         assert_eq!(d.headers.len(), 1);
+        assert!(d.has_frontmatter());
+    }
+
+    #[test]
+    fn no_frontmatter_when_absent() {
+        let d = doc("# Heading\n\nBody");
+        assert!(!d.has_frontmatter());
+    }
+
+    #[test]
+    fn empty_frontmatter_still_counts_as_present() {
+        let d = doc("---\n---\n# Heading");
+        assert!(d.has_frontmatter());
     }
 
     #[test]

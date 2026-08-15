@@ -23,14 +23,12 @@ Currently, this server supports:
 - [x] `textDocument/references` - Find all references to files, headers, and footnotes
 - [x] `textDocument/completion` - Autocomplete for `[[`, `](`, `#` (headers/tags), and `[^` (footnotes)
 - [x] `textDocument/codeAction` - Extract header sections to new files
-- [x] `textDocument/diagnostic` - Report parser errors and malformed tags (partial)
+- [x] `textDocument/diagnostic` - Report parser errors, malformed tags, broken links, and missing frontmatter
 - [x] `textDocument/rename` - Rename files/headers and update all references
 - [x] `textDocument/documentSymbol` - Document outline with headers and links
 - [x] `textDocument/workspaceSymbol` - Search symbols across workspace
 - [-] `textDocument/formatting` - Format markdown documents
 - [ ] Proper document syncing (incremental sync instead of full sync)
-- [ ] Broken link validation (configured but not active)
-- [ ] Missing frontmatter validation (configured but not active)
 
 ---
 

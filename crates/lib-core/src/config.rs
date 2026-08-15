@@ -10,6 +10,8 @@ pub struct Config {
     pub server: ServerConfig,
     /// Markdown parsing settings
     pub markdown: MarkdownConfig,
+    /// Frontmatter settings
+    pub frontmatter: FrontmatterConfig,
     /// Diagnostics settings
     pub diagnostics: DiagnosticsConfig,
     /// Link resolution settings
@@ -28,8 +30,6 @@ pub struct ServerConfig {
 /// Markdown parsing configuration
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct MarkdownConfig {
-    /// Enable frontmatter parsing
-    pub enable_frontmatter: bool,
     /// Enable link validation
     pub validate_links: bool,
 }
@@ -37,10 +37,42 @@ pub struct MarkdownConfig {
 impl Default for MarkdownConfig {
     fn default() -> Self {
         Self {
-            enable_frontmatter: true,
             validate_links: true,
         }
     }
+}
+
+/// Frontmatter validation configuration
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FrontmatterConfig {
+    /// Enable frontmatter diagnostics (missing/malformed frontmatter, and
+    /// schema violations)
+    pub enabled: bool,
+    /// Required frontmatter fields and their expected types. Empty means no
+    /// schema is enforced.
+    pub schema: Vec<FrontmatterFieldSchema>,
+}
+
+impl Default for FrontmatterConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            schema: Vec::new(),
+        }
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct FrontmatterFieldSchema {
+    pub key: String,
+    pub r#type: FrontmatterFieldType,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "lowercase")]
+pub enum FrontmatterFieldType {
+    String,
+    List,
 }
 
 /// Link resolution configuration
@@ -78,15 +110,12 @@ pub enum LinkGenerationStyle {
 pub struct DiagnosticsConfig {
     /// Enable diagnostics for broken links
     pub enable_broken_links: bool,
-    /// Enable diagnostics for missing frontmatter
-    pub enable_missing_frontmatter: bool,
 }
 
 impl Default for DiagnosticsConfig {
     fn default() -> Self {
         Self {
             enable_broken_links: true,
-            enable_missing_frontmatter: false,
         }
     }
 }
@@ -95,12 +124,14 @@ impl Config {
     pub fn new(
         server: ServerConfig,
         markdown: MarkdownConfig,
+        frontmatter: FrontmatterConfig,
         diagnostics: DiagnosticsConfig,
         links: LinkConfig,
     ) -> Self {
         Self {
             server,
             markdown,
+            frontmatter,
             diagnostics,
             links,
         }
