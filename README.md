@@ -18,12 +18,12 @@ Currently, this server supports:
 
 ## Implemented Features
 
-- [x] `textDocument/hover` - Preview linked documents on hover (wiki-links & regular links)
-- [x] `textDocument/definition` - Navigate to target files and headers
-- [x] `textDocument/references` - Find all references to files and headers
-- [x] `textDocument/completion` - Autocomplete for `[[`, `](`, and `#` (headers)
+- [x] `textDocument/hover` - Preview linked documents on hover (wiki-links, regular links, and footnotes)
+- [x] `textDocument/definition` - Navigate to target files, headers, and footnote definitions
+- [x] `textDocument/references` - Find all references to files, headers, and footnotes
+- [x] `textDocument/completion` - Autocomplete for `[[`, `](`, `#` (headers/tags), and `[^` (footnotes)
 - [x] `textDocument/codeAction` - Extract header sections to new files
-- [x] `textDocument/publishDiagnostics` - Report parser errors (partial)
+- [x] `textDocument/diagnostic` - Report parser errors and malformed tags (partial)
 - [x] `textDocument/rename` - Rename files/headers and update all references
 - [x] `textDocument/documentSymbol` - Document outline with headers and links
 - [x] `textDocument/workspaceSymbol` - Search symbols across workspace
