@@ -6,7 +6,7 @@ use std::{
 use gen_lsp_types::{ClientCapabilities, Uri, WorkspaceFolder};
 use miette::Result;
 
-use lib_core::{config::Config, vault::Vault};
+use lib_core::{config::Config, resolver::VaultContext, vault::Vault};
 
 use crate::uri::UriExt;
 
@@ -112,6 +112,21 @@ impl ServerState {
 
         let doc_path = document_uri.to_file_path()?;
         self.get_workspace_root_for_path(&doc_path)
+    }
+
+    /// Build a resolver context over the current vault and every workspace root.
+    pub fn vault_context(&self) -> VaultContext<'_> {
+        let workspace_roots = self
+            .workspace_roots
+            .iter()
+            .filter_map(|uri| uri.to_file_path().map(|path| path.into_owned()))
+            .collect();
+
+        VaultContext {
+            vault: &self.documents,
+            config: &self.config.links,
+            workspace_roots,
+        }
     }
 
     /// Look at all workspaces and take the most specific (deepest) root for the given path.

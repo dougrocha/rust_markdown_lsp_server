@@ -333,15 +333,7 @@ fn complete_headers(
 ) -> Option<Vec<CompletionItem>> {
     let mut completions: Vec<CompletionItem> = vec![];
 
-    let source_root = lsp.get_workspace_root_for_path(&document.path);
-
-    let file_uri = match link_resolver::resolve_link(
-        ctx.file_path,
-        document,
-        &lsp.config.links,
-        &lsp.documents,
-        source_root,
-    ) {
+    let file_uri = match link_resolver::resolve_target_uri(lsp, document, ctx.file_path) {
         Ok(uri) => uri,
         Err(e) => {
             tracing::warn!(

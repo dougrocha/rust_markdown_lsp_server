@@ -9,11 +9,12 @@ use lib_core::{
         index::{Link, LinkKind, Severity},
     },
     path::slug::header_slug,
+    resolver::VaultContext,
 };
 use miette::{Context, Result};
 
 use crate::{
-    get_document, handlers::link_resolver::resolve_target_uri, server_state::ServerState,
+    get_document, handlers::link_resolver::resolve_in_context, server_state::ServerState,
     text_buffer_conversions::TextBufferConversions, uri::UriExt,
 };
 
@@ -144,10 +145,11 @@ fn broken_link_diagnostics(lsp: &ServerState, document: &Document) -> Vec<Diagno
     }
 
     let slice = document.source.slice(..);
+    let cx = lsp.vault_context();
 
     document
         .links()
-        .filter_map(|link| check_link(lsp, document, link))
+        .filter_map(|link| check_link(&cx, document, link))
         .map(|(link, message)| Diagnostic {
             range: slice.byte_to_lsp_range(link.span),
             severity: Some(DiagnosticSeverity::Warning),
@@ -164,7 +166,7 @@ fn broken_link_diagnostics(lsp: &ServerState, document: &Document) -> Vec<Diagno
 
 /// Returns `Some((link, message))` if `link` is broken.
 fn check_link<'a>(
-    lsp: &ServerState,
+    cx: &VaultContext<'_>,
     document: &Document,
     link: &'a Link,
 ) -> Option<(&'a Link, String)> {
@@ -179,7 +181,7 @@ fn check_link<'a>(
         return None;
     }
 
-    let target_uri = match resolve_target_uri(lsp, document, &target) {
+    let target_uri = match resolve_in_context(&target, &document.path, cx) {
         Ok(uri) => uri,
         Err(_) => {
             return Some((link, format!("Broken link: '{target}' could not be resolved")));
@@ -190,7 +192,7 @@ fn check_link<'a>(
         return Some((link, format!("Broken link: '{target}' could not be resolved")));
     };
 
-    let target_doc = lsp.documents.get_document(&target_path);
+    let target_doc = cx.vault.get_document(&target_path);
     if target_doc.is_none() && !target_path.exists() {
         return Some((link, format!("Broken link: '{target}' does not exist")));
     }

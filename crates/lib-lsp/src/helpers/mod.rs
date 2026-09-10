@@ -1,5 +1,3 @@
-pub mod references;
-
 use gen_lsp_types::{Range, Uri};
 use miette::{Context, Result, miette};
 use ropey::RopeSlice;
