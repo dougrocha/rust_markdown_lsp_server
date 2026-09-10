@@ -55,6 +55,8 @@ pub enum ListType {
 pub enum BlockKind {
     Heading {
         level: u8,
+        /// The byte span of the heading text after the "#" marker. If there is no text, this is an empty span after the marker.
+        text_span: Span,
         children: Vec<Inline>,
     },
     Paragraph {
@@ -248,6 +250,20 @@ pub struct Parser<'src> {
     cursor: Cursor<'src>,
 }
 
+/// Return true if the line looks like a YAML key, for example "title:" or "title: value".
+fn looks_like_yaml_key(line: &str) -> bool {
+    match line.trim_start().split_once(':') {
+        Some((key, rest)) => {
+            !key.trim().is_empty()
+                && key
+                    .chars()
+                    .all(|c| c.is_alphanumeric() || matches!(c, '_' | '-' | ' '))
+                && (rest.is_empty() || rest.starts_with(char::is_whitespace))
+        }
+        None => false,
+    }
+}
+
 impl<'src> Parser<'src> {
     pub fn new(source: &'src str) -> Parser<'src> {
         Parser {
@@ -288,6 +304,11 @@ impl<'src> Parser<'src> {
             let line = &src[search_pos..line_end];
 
             if line == "---" {
+                // A first line of "---" can also be a thematic break. Treat the block as frontmatter only if it is empty or has a YAML key line.
+                let body = &src[4..search_pos];
+                if !body.trim().is_empty() && !body.lines().any(looks_like_yaml_key) {
+                    return None;
+                }
                 let total_end = if line_end < src.len() {
                     line_end + 1
                 } else {
@@ -313,7 +334,9 @@ impl<'src> Parser<'src> {
 
         match self.cursor.peek() {
             Some('#') if self.cursor.is_heading() => self.parse_heading(),
-            Some(_) if Self::match_footnote_definition_marker(self.cursor.rest_of_line()).is_some() => {
+            Some(_)
+                if Self::match_footnote_definition_marker(self.cursor.rest_of_line()).is_some() =>
+            {
                 self.parse_footnote_definition()
             }
             Some(_) if Self::match_list_marker(line_after_indent).is_some() => {
@@ -503,6 +526,7 @@ impl<'src> Parser<'src> {
 
         let kind = BlockKind::Heading {
             level: (level_span.len() as u8).min(6),
+            text_span: inline_span,
             children: self.parse_inline(inline_span),
         };
 
@@ -904,6 +928,7 @@ mod tests {
             span: Span::new(0, 10),
             kind: BlockKind::Heading {
                 level: 1,
+                text_span: Span::new(2, 10),
                 children: vec![Inline {
                     kind: InlineKind::Text,
                     span: Span::new(2, 10),
@@ -924,6 +949,7 @@ mod tests {
             span: Span::new(0, 30),
             kind: BlockKind::Heading {
                 level: 1,
+                text_span: Span::new(2, 30),
                 children: vec![
                     Inline {
                         kind: InlineKind::Text,
@@ -996,6 +1022,7 @@ mod tests {
                 span: Span::new(12, 24),
                 kind: BlockKind::Heading {
                     level: 2,
+                    text_span: Span::new(15, 24),
                     children: vec![Inline {
                         kind: InlineKind::Text,
                         span: Span::new(15, 24),
@@ -1625,6 +1652,30 @@ mod tests {
                 .iter()
                 .all(|b| !matches!(b.kind, BlockKind::Frontmatter))
         );
+    }
+
+    #[test]
+    fn leading_thematic_break_is_not_frontmatter() {
+        // "---" fences around plain text, with no key line, are not frontmatter.
+        let input = "---\nSection A\n---\n# Heading";
+        let result = Parser::new(input).parse();
+
+        assert!(
+            result
+                .iter()
+                .all(|b| !matches!(b.kind, BlockKind::Frontmatter))
+        );
+        assert!(
+            result
+                .iter()
+                .any(|b| matches!(b.kind, BlockKind::Heading { .. }))
+        );
+    }
+
+    #[test]
+    fn empty_frontmatter_is_still_frontmatter() {
+        let result = Parser::new("---\n---\n# Heading").parse();
+        assert_eq!(result[0].kind, BlockKind::Frontmatter);
     }
 
     #[test]

@@ -194,9 +194,9 @@ where
         }
     };
 
+    // If the notification handler fails, write a log message. Do not stop the server.
     if let Err(err) = handler(lsp, params) {
         tracing::error!("Notification failed [method: {}]: {:?}", R::METHOD, err);
-        return Err(err);
     }
 
     Ok(())

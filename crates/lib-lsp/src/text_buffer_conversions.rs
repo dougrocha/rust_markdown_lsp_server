@@ -20,18 +20,21 @@ pub trait TextBufferConversions {
             .expect("LSP position out of bounds")
     }
 
-    /// Converts anything that can be turned into a byte range into an LSP-compatible Range.
+    /// Converts a byte range into an LSP Range. Out-of-range offsets are clamped, so a stray span cannot panic the handler.
     fn byte_to_lsp_range(&self, span: impl Into<Range<usize>>) -> LspRange {
         let span = span.into();
-        if span.is_empty() && span.start == self.byte_len() {
-            let pos = self.byte_offset_to_position(span.start);
-            return LspRange::new(pos, pos);
-        }
+        let start = self.snap_byte_offset(span.start);
+        let end = self.snap_byte_offset(span.end.max(span.start));
 
-        let start_pos = self.byte_offset_to_position(span.start);
-        let end_pos = self.byte_offset_to_position(span.end);
+        let start_pos = self
+            .try_byte_offset_to_position(start)
+            .unwrap_or_else(|| Position::new(0, 0));
+        let end_pos = self.try_byte_offset_to_position(end).unwrap_or(start_pos);
         LspRange::new(start_pos, end_pos)
     }
+
+    /// Clamps a byte offset into the buffer and snaps it down to a character boundary.
+    fn snap_byte_offset(&self, byte_offset: usize) -> usize;
 
     /// Converts an LSP-compatible Range to a byte offset span.
     fn lsp_to_byte_range(&self, range: &LspRange) -> Range<usize> {
@@ -85,5 +88,10 @@ impl TextBufferConversions for RopeSlice<'_> {
 
     fn byte_len(&self) -> usize {
         self.len_bytes()
+    }
+
+    fn snap_byte_offset(&self, byte_offset: usize) -> usize {
+        let clamped = byte_offset.min(self.byte_len());
+        self.char_to_byte(self.byte_to_char(clamped))
     }
 }

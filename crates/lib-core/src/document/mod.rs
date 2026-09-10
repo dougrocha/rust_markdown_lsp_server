@@ -152,11 +152,14 @@ impl Document {
 
 fn extract_block(doc: &mut Document, block: &Block, content: &str) {
     match &block.kind {
-        BlockKind::Heading { level, children } => {
-            let text_span = span_of_children(children);
+        BlockKind::Heading {
+            level,
+            text_span,
+            children,
+        } => {
             doc.headers.push(Header {
                 span: block.span,
-                text_span,
+                text_span: *text_span,
                 level: *level,
             });
             extract_inlines(doc, children, content);
@@ -201,6 +204,17 @@ fn extract_block(doc: &mut Document, block: &Block, content: &str) {
     }
 }
 
+/// Return `span` with leading and trailing whitespace removed.
+fn trim_span(span: Span, content: &str) -> Span {
+    let text = span.as_str(content);
+    let trimmed = text.trim();
+    if trimmed.is_empty() {
+        return Span::new(span.start, span.start);
+    }
+    let start = span.start + (text.len() - text.trim_start().len());
+    Span::new(start, start + trimmed.len())
+}
+
 /// Splits a span on `#`, returning `(before, Some(after))` or `(original, None)`.
 fn split_span_on_hash(span: Span, content: &str) -> (Span, Option<Span>) {
     let text = span.as_str(content);
@@ -232,7 +246,8 @@ fn extract_inlines(doc: &mut Document, inlines: &[Inline], content: &str) {
                 });
             }
             InlineKind::Link { children, url_span } => {
-                let (url, header) = split_span_on_hash(*url_span, content);
+                // A CommonMark destination can have spaces around it inside "(...)".
+                let (url, header) = split_span_on_hash(trim_span(*url_span, content), content);
                 doc.links.push(Link {
                     span: inline.span,
                     kind: LinkKind::Inline {
@@ -259,9 +274,7 @@ fn extract_inlines(doc: &mut Document, inlines: &[Inline], content: &str) {
                         span: inline.span,
                         severity: Severity::Warning,
                         code: DiagnosticCode::MalformedTag,
-                        message: format!(
-                            "Tag '#{name_text}' ends with a dangling separator"
-                        ),
+                        message: format!("Tag '#{name_text}' ends with a dangling separator"),
                     });
                 }
 
@@ -331,10 +344,7 @@ mod tests {
         assert_eq!(alias.map(|a| a.as_str(content)), Some("alias"));
 
         let LinkKind::Inline {
-            label,
-            url,
-            header,
-            ..
+            label, url, header, ..
         } = &links.next().unwrap().kind
         else {
             panic!("expected link reference");
@@ -398,6 +408,33 @@ mod tests {
         let d = doc("# See [Google](https://google.com)");
         assert_eq!(d.headers.len(), 1);
         assert_eq!(d.links.len(), 1);
+    }
+
+    #[test]
+    fn inline_link_destination_ignores_surrounding_whitespace() {
+        let content = "[label](  ./a.md  )";
+        let d = doc(content);
+        let LinkKind::Inline { url, .. } = &d.links[0].kind else {
+            panic!("expected inline link");
+        };
+        assert_eq!(url.as_str(content), "./a.md");
+    }
+
+    #[test]
+    fn empty_heading_text_span_is_not_file_start() {
+        let d = doc("intro\n\n# ");
+        assert_eq!(d.headers.len(), 1);
+        let span = d.headers[0].text_span;
+        assert!(span.is_empty());
+        assert_eq!(span.start, "intro\n\n# ".len());
+    }
+
+    #[test]
+    fn leading_thematic_break_is_not_frontmatter() {
+        let d = doc("---\nSection A\n---\n# Real Heading");
+        assert!(!d.has_frontmatter());
+        assert_eq!(d.headers().count(), 1);
+        assert_eq!(d.headers[0].content_str(&d.source), "Real Heading");
     }
 
     #[test]
