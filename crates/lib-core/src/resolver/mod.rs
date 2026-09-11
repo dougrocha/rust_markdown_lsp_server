@@ -68,7 +68,7 @@ pub fn resolve(target: &str, source_path: &Path, cx: &VaultContext<'_>) -> Targe
     }
 
     if cx.config.enable_filename_resolution
-        && let Some(path) = resolve_by_name(name, cx.vault)
+        && let Some(path) = resolve_by_name(name, cx.root_for(source_path), cx.vault)
     {
         return TargetResolution::File(path);
     }
@@ -104,11 +104,19 @@ fn resolve_as_path(
     }
 }
 
-/// Resolve a bare file name through the index, with any trailing `.md` removed first.
-fn resolve_by_name(target: &str, vault: &Vault) -> Option<PathBuf> {
+/// Resolve a bare file name through the index, strip a trailing `.md` first, and prefer a match under `root`.
+fn resolve_by_name(target: &str, root: Option<&Path>, vault: &Vault) -> Option<PathBuf> {
     let stem = target.strip_suffix(".md").unwrap_or(target);
     let slug = filename_slug(stem);
-    vault.index().resolve_name(&slug).map(Path::to_path_buf)
+    let candidates = vault.index().candidates(&slug);
+
+    if let Some(root) = root
+        && let Some(scoped) = candidates.iter().find(|path| path.starts_with(root))
+    {
+        return Some(scoped.clone());
+    }
+
+    candidates.first().cloned()
 }
 
 /// A single link somewhere in the vault, with the document it lives in.
@@ -268,6 +276,48 @@ mod tests {
         assert_eq!(
             resolve("/sub/target.md", Path::new("/vault/sub/a.md"), &cx),
             TargetResolution::File(PathBuf::from("/vault/sub/target.md"))
+        );
+    }
+
+    #[test]
+    fn bare_name_resolves_within_the_source_root() {
+        let vault = vault_with(&[
+            ("/rootA/note.md", "# A"),
+            ("/rootB/note.md", "# B"),
+        ]);
+        let cfg = config();
+        let cx = VaultContext {
+            vault: &vault,
+            config: &cfg,
+            workspace_roots: vec![PathBuf::from("/rootA"), PathBuf::from("/rootB")],
+        };
+
+        assert_eq!(
+            resolve("note", Path::new("/rootB/ref.md"), &cx),
+            TargetResolution::File(PathBuf::from("/rootB/note.md"))
+        );
+        assert_eq!(
+            resolve("note", Path::new("/rootA/ref.md"), &cx),
+            TargetResolution::File(PathBuf::from("/rootA/note.md"))
+        );
+    }
+
+    #[test]
+    fn bare_name_outside_every_root_falls_back_to_the_sorted_first() {
+        let vault = vault_with(&[
+            ("/rootA/note.md", "# A"),
+            ("/rootB/note.md", "# B"),
+        ]);
+        let cfg = config();
+        let cx = VaultContext {
+            vault: &vault,
+            config: &cfg,
+            workspace_roots: vec![PathBuf::from("/rootA"), PathBuf::from("/rootB")],
+        };
+
+        assert_eq!(
+            resolve("note", Path::new("/elsewhere/ref.md"), &cx),
+            TargetResolution::File(PathBuf::from("/rootA/note.md"))
         );
     }
 

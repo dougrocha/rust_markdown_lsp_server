@@ -1,10 +1,58 @@
 pub mod did_rename;
 pub mod will_rename;
 
+use std::ops::Range;
+use std::path::Path;
+
 use gen_lsp_types::{PrepareRenameParams, PrepareRenameResult, RenameParams, WorkspaceEdit};
+use lib_core::{
+    document::Document,
+    path::find_relative_path,
+    resolver::{self, TargetResolution, VaultContext},
+};
 use miette::Result;
 
 use crate::server_state::ServerState;
+
+/// Return `(span, replacement)` for each link in a moved file that must change so it still resolves from `new_path`.
+pub(crate) fn moved_file_link_edits(
+    doc: &Document,
+    old_path: &Path,
+    new_path: &Path,
+    cx: &VaultContext<'_>,
+) -> Vec<(Range<usize>, String)> {
+    doc.links()
+        .filter_map(|link| {
+            let target = link.target_str(&doc.source);
+            if resolver::is_external(&target) {
+                return None;
+            }
+
+            let before = match resolver::resolve(&target, old_path, cx) {
+                TargetResolution::File(path) => path,
+                TargetResolution::Unresolved => return None,
+            };
+
+            // Skip a link that still resolves to the same file from the new path.
+            if let TargetResolution::File(after) = resolver::resolve(&target, new_path, cx)
+                && after == before
+            {
+                return None;
+            }
+
+            let new_rel = find_relative_path(new_path, &before).ok()?;
+            Some((link.span.into(), link.render_with_target(&doc.source, &new_rel)))
+        })
+        .collect()
+}
+
+/// Apply each `(span, replacement)` edit to `text` from the last span first, so earlier offsets stay valid.
+pub(crate) fn apply_edits(text: &mut String, mut edits: Vec<(Range<usize>, String)>) {
+    edits.sort_by_key(|edit| std::cmp::Reverse(edit.0.start));
+    for (span, replacement) in edits {
+        text.replace_range(span, &replacement);
+    }
+}
 
 pub fn process_prepare_rename(
     _lsp: &mut ServerState,

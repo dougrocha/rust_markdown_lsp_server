@@ -2,12 +2,15 @@ use std::{collections::HashMap, path::PathBuf, str::FromStr};
 
 use gen_lsp_types::{RenameFilesParams, TextEdit, Uri, WorkspaceEdit};
 use lib_core::{
-    path::{combine_and_normalize, find_relative_path},
+    path::find_relative_path,
     resolver::{AnchorMatch, ReferenceTarget, find_link_references},
 };
 use miette::{IntoDiagnostic, Result};
 
-use crate::{ServerState, text_buffer_conversions::TextBufferConversions, uri::UriExt};
+use crate::{
+    ServerState, handlers::rename::moved_file_link_edits,
+    text_buffer_conversions::TextBufferConversions, uri::UriExt,
+};
 
 fn parse_file_rename_uri(uri_str: &str) -> Result<(Uri, PathBuf)> {
     let uri = Uri::from_str(uri_str).into_diagnostic()?;
@@ -58,15 +61,12 @@ pub fn process_will_rename_files(
 
         // update references in the moved file
         if let Some(doc) = lsp.documents.get_document(&old_path) {
-            for edit in doc.links().filter_map(|link| {
-                let target = link.target_str(&doc.source);
-                let resolved = combine_and_normalize(&old_path, &target).ok()?;
-                let new_rel = find_relative_path(&new_path, resolved).ok()?;
-                let new_text = link.render_with_target(&doc.source, &new_rel);
-                let range = doc.source.slice(..).byte_to_lsp_range(link.span);
-                Some(TextEdit::new(range, new_text))
-            }) {
-                changes.entry(new_uri.clone()).or_default().push(edit);
+            for (span, new_text) in moved_file_link_edits(doc, &old_path, &new_path, &cx) {
+                let range = doc.source.slice(..).byte_to_lsp_range(span);
+                changes
+                    .entry(new_uri.clone())
+                    .or_default()
+                    .push(TextEdit::new(range, new_text));
             }
         }
     }
@@ -179,6 +179,34 @@ mod tests {
         let edits = changes.get("/workspace/notes.md").unwrap();
         assert_eq!(edits.len(), 1);
         assert_eq!(edits[0].new_text, "[[./renamed.md]]");
+    }
+
+    #[test]
+    fn move_rewrites_path_wikilink_inside_the_moved_file() {
+        let mut ws = TestWorkspace::new();
+        ws.state.config.links.enable_filename_resolution = false;
+
+        ws.add_file("/workspace/target.md", 1, "see [[notes]]")
+            .add_file("/workspace/notes.md", 1, "# Notes");
+
+        let changes = ws.rename("target.md", "docs/target.md");
+
+        let edits = changes.get("/workspace/docs/target.md").unwrap();
+        assert_eq!(edits.len(), 1);
+        assert_eq!(edits[0].new_text, "[[../notes]]");
+    }
+
+    #[test]
+    fn move_leaves_a_workspace_absolute_link_inside_the_moved_file_untouched() {
+        let mut ws = TestWorkspace::new();
+        ws.state.insert_root("file:///workspace".parse().unwrap());
+
+        ws.add_file("/workspace/target.md", 1, "[x](/notes.md)")
+            .add_file("/workspace/notes.md", 1, "# Notes");
+
+        let changes = ws.rename("target.md", "docs/target.md");
+
+        assert!(!changes.contains_key("/workspace/docs/target.md"));
     }
 
     #[test]
